@@ -1,16 +1,23 @@
-import dotenv from 'dotenv';
-import express from 'express';
+import initDatabase from "./src/config/db.init.js";
+import sequelize from "./src/config/database.config.js";
+import "./src/modules/associations.js";
 
+const startServer = async () => {
+  try {
+    // STEP 1: Ensure DB exists
+    await initDatabase();
 
-const app=express();
+    // STEP 2: Connect Sequelize to app DB
+    await sequelize.authenticate();
+    console.log("Application Connected to Database");
 
-app.use(express.json());
+    // STEP 3: Sync tables
+    await sequelize.sync({ alter: true });
+    console.log("Tables Created with Relations");
+  } catch (error) {
+    console.error("Server startup failed:", error);
+    process.exit(1);
+  }
+};
 
-
-dotenv.config();
-
-const PORT=process.env.PORT||5000;
-
-app.listen(PORT,()=>{
-    console.log(`Server is running on port ${PORT}`);
-});
+startServer();
