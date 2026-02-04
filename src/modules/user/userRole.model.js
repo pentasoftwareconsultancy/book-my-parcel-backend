@@ -12,10 +12,16 @@ const UserRole = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    assigned_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW, // 🔥 automatically fills current timestamp
+    },
   },
   {
-    timestamps: false,
-  },
+    tableName: "user_roles",
+    timestamps: false, // we don’t need Sequelize auto timestamps here
+  }
 );
 
 export default UserRole;
