@@ -9,15 +9,15 @@ import { seedRoles } from "./src/utils/seedRoles.js";
 
 const startServer = async () => {
   try {
-    // STEP 1: Ensure DB exists
+    
     await initDatabase();
 
-    // STEP 2: Connect Sequelize to app DB
+    
     await sequelize.authenticate();
     console.log("Application Connected to Database");
 
-    // STEP 3: Sync tables
-    await sequelize.sync({ alter: true });
+    
+    await sequelize.sync({ alter: false });
     console.log("Tables Created with Relations");
 
     //STEP 4: Seed static roles
