@@ -10,6 +10,7 @@ import UserProfile from "../modules/user/userProfile.model.js";
 import TravellerProfile from "../modules/traveller/traveller.model.js";
 import TravellerTrip from "../modules/traveller/travellerTrip.model.js";
 import AadhaarVerification from "../modules/traveller/aadhaarVerification.model.js";
+import TravellerKYC from "./traveller/travellerKYC.model.js";
 
 /* PARCEL */
 import Parcel from "../modules/parcel/parcel.model.js";
@@ -114,6 +115,7 @@ Booking.belongsTo(User, {
   as: "traveller",
 });
 
+
 /* ===========================
    BOOKING ↔ STATUS LOG (1–N)
    =========================== */
@@ -175,6 +177,23 @@ Booking.hasMany(ParcelProof, {
 ParcelProof.belongsTo(Booking, {
   foreignKey: "booking_id",
 });
+
+
+
+// travellerkyc
+
+User.hasOne(TravellerKYC, {
+  foreignKey: "user_id",
+  as:"TravellerKYC",
+  onDelete: "CASCADE"
+});
+
+TravellerKYC.belongsTo(User, {
+  foreignKey: "user_id",
+  as:"User"
+});
+
+
 
 export default function applyAssociations() {
   return true;
