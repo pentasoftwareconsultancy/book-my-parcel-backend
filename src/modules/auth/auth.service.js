@@ -70,11 +70,11 @@ export async function signup(userData, selectedRole) {
     console.log("Roles to assign:", rolesToAssign.map(r => r.name));
 
     // Assign ADMIN role if selected
-    if (selectedRole === ROLES.ADMIN) {
-      const adminRole = await getRoleByName(ROLES.ADMIN);
-      rolesToAssign.push(adminRole);
-      console.log("Admin role assigned.");
-    }
+    // if (selectedRole === ROLES.ADMIN) {
+    //   const adminRole = await getRoleByName(ROLES.ADMIN);
+    //   rolesToAssign.push(adminRole);
+    //   console.log("Admin role assigned.");
+    // }
 
     // 4️⃣ Store roles in UserRole table
     for (const role of rolesToAssign) {
@@ -212,13 +212,13 @@ export async function becomeTraveller(userId) {
     console.log("Traveller KYC ensured for user:", user.id);
 
     // 5️⃣ Fetch updated roles
-const roles = await Role.findAll({
-  include: {
-    model: User,
-    where: { id: user.id }
-  },
-  transaction: t
-});
+    const roles = await Role.findAll({
+      include: {
+        model: User,
+        where: { id: user.id }
+      },
+      transaction: t
+    });
     console.log("Updated roles fetched for user:", user.id, roles.map(r => r.name));
 
     // 6️⃣ Generate fresh token (optional but recommended)
@@ -231,6 +231,40 @@ const roles = await Role.findAll({
       roles: roles.map(r => r.name),
       kycStatus: KYC_STATUS.NOT_STARTED
     };
-    
+
   });
+}
+
+
+/**
+ * ADMIN LOGIN (Static Credentials)
+ */
+export async function adminLogin(email, password) {
+  console.log("Attempting admin login:", email);
+
+  if (
+    email !== process.env.ADMIN_EMAIL ||
+    password !== process.env.ADMIN_PASSWORD
+  ) {
+    throw new Error("Invalid admin credentials");
+  }
+
+  const adminPayload = {
+    id: "ADMIN_STATIC_ID",
+    name: process.env.ADMIN_NAME,
+    email: process.env.ADMIN_EMAIL,
+    role: ROLES.ADMIN
+  };
+
+  const token = generateToken({
+    userId: adminPayload.id,
+    role: ROLES.ADMIN
+  });
+
+  return {
+    user: adminPayload,
+    token,
+    roles: [ROLES.ADMIN],
+    kycStatus: null
+  };
 }
