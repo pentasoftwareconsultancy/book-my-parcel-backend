@@ -236,35 +236,3 @@ export async function becomeTraveller(userId) {
 }
 
 
-/**
- * ADMIN LOGIN (Static Credentials)
- */
-export async function adminLogin(email, password) {
-  console.log("Attempting admin login:", email);
-
-  if (
-    email !== process.env.ADMIN_EMAIL ||
-    password !== process.env.ADMIN_PASSWORD
-  ) {
-    throw new Error("Invalid admin credentials");
-  }
-
-  const adminPayload = {
-    id: "ADMIN_STATIC_ID",
-    name: process.env.ADMIN_NAME,
-    email: process.env.ADMIN_EMAIL,
-    role: ROLES.ADMIN
-  };
-
-  const token = generateToken({
-    userId: adminPayload.id,
-    role: ROLES.ADMIN
-  });
-
-  return {
-    user: adminPayload,
-    token,
-    roles: [ROLES.ADMIN],
-    kycStatus: null
-  };
-}
