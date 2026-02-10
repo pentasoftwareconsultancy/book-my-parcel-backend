@@ -6,7 +6,7 @@ import sequelize from "./src/config/database.config.js";
 import "./src/modules/associations.js";
 import app from "./src/app.js";
 import { seedRoles } from "./src/utils/seedRoles.js";
-
+import { createDefaultAdmin } from "./src/utils/createDefaultAdmin.js";
 const startServer = async () => {
   try {
     
@@ -22,6 +22,8 @@ const startServer = async () => {
 
     //STEP 4: Seed static roles
     await seedRoles();
+      // STEP 5: Create default admin
+    await createDefaultAdmin();
 
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
@@ -32,5 +34,6 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
 
 startServer();

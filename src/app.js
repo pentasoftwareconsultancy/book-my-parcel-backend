@@ -15,6 +15,9 @@ app.use(express.json());
 // Routes
 app.use("/api", routes); 
 
+// admin login 
+// app.use("/admin", adminRoutes);
+
 app.get("/", (req, res) => {
   res.status(200).json({ message: "Book My Parcel Backend is running!" });
 });

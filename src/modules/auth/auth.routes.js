@@ -3,7 +3,7 @@ import {
   signupController,
   loginController,
   becomeTravellerController,
-  adminLoginController
+ 
 } from "./auth.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 
@@ -15,6 +15,6 @@ router.post("/login", loginController);
 
 // Protected route
 router.post("/become-traveller", authMiddleware, becomeTravellerController);
-router.post("/admin/login", adminLoginController);
+// router.post("/admin/login", adminLoginController);
 
 export default router;
