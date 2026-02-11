@@ -2,7 +2,7 @@ import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
 
 const TravellerKYC = sequelize.define(
-  "TravellerKYC",
+  "traveller_kyc",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -23,7 +23,6 @@ const TravellerKYC = sequelize.define(
     }
   },
   {
-    // tableName: "traveller_kyc",
     timestamps: true,          // keep timestamps
     underscored: true          // ✅ automatically maps createdAt → created_at, updatedAt → updated_at
   }

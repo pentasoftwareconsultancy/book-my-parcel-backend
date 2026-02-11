@@ -29,6 +29,9 @@ import Refund from "../modules/payment/refund.model.js";
 /* TRACKING */
 import ParcelTracking from "../modules/tracking/parcelTracking.model.js";
 
+/* ADDRESS */
+import Address from "./parcel/address.model.js";
+
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
    =========================== */
@@ -89,8 +92,13 @@ Parcel.belongsTo(User, { foreignKey: "user_id" });
 /* ===========================
    PARCEL ↔ BOOKING (1–1)
    =========================== */
-Parcel.hasOne(Booking, { foreignKey: "parcel_id", onDelete: "CASCADE" });
-Booking.belongsTo(Parcel, { foreignKey: "parcel_id" });
+Parcel.hasOne(Booking, {
+  foreignKey: "parcel_id",
+  onDelete: "CASCADE"
+});
+Booking.belongsTo(Parcel, {
+  foreignKey: "parcel_id"
+});
 
 /* ===========================
    TRIP ↔ BOOKING (1–N)
@@ -184,14 +192,66 @@ ParcelProof.belongsTo(Booking, {
 
 User.hasOne(TravellerKYC, {
   foreignKey: "user_id",
-  as:"TravellerKYC",
+  as: "travellerKYC",
   onDelete: "CASCADE"
 });
 
 TravellerKYC.belongsTo(User, {
   foreignKey: "user_id",
-  as:"User"
+  as: "User"
 });
+
+/* ===========================
+   USER ↔ ADDRESS (1–N)
+   =========================== */
+User.hasMany(Address, {
+  foreignKey: "user_id",
+  onDelete: "CASCADE",
+});
+Address.belongsTo(User, {
+  foreignKey: "user_id",
+});
+
+/* ===========================
+   BOOKING ↔ PICKUP ADDRESS
+   =========================== */
+Booking.belongsTo(Address, {
+  foreignKey: "pickup_address_id",
+  as: "pickupAddress",
+});
+
+Address.hasMany(Booking, {
+  foreignKey: "pickup_address_id",
+  as: "pickupBookings",
+});
+
+/* ===========================
+   BOOKING ↔ DELIVERY ADDRESS
+   =========================== */
+Booking.belongsTo(Address, {
+  foreignKey: "delivery_address_id",
+  as: "deliveryAddress",
+});
+
+Address.hasMany(Booking, {
+  foreignKey: "delivery_address_id",
+  as: "deliveryBookings",
+});
+
+/* ===========================
+   USER (SENDER) ↔ BOOKING (1–N)
+   =========================== */
+User.hasMany(Booking, {
+  foreignKey: "user_id",
+  as: "senderBookings",
+});
+
+Booking.belongsTo(User, {
+  foreignKey: "user_id",
+  as: "sender",
+});
+
+
 
 
 
