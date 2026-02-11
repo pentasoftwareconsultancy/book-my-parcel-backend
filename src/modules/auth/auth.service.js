@@ -69,13 +69,7 @@ export async function signup(userData, selectedRole) {
     }
     console.log("Roles to assign:", rolesToAssign.map(r => r.name));
 
-    // Assign ADMIN role if selected
-    // if (selectedRole === ROLES.ADMIN) {
-    //   const adminRole = await getRoleByName(ROLES.ADMIN);
-    //   rolesToAssign.push(adminRole);
-    //   console.log("Admin role assigned.");
-    // }
-
+    
     // 4️⃣ Store roles in UserRole table
     for (const role of rolesToAssign) {
       await UserRole.create(
