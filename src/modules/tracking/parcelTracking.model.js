@@ -1,20 +1,22 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
 
-const TravellerProfile = sequelize.define(
-  "traveller_profiles",
+const ParcelTracking = sequelize.define(
+  "parcel_tracking",
   {
     id: {
       type: DataTypes.UUID,
       primaryKey: true,
       defaultValue: DataTypes.UUIDV4,
     },
-    user_id: DataTypes.UUID,
-    vehicle_type: DataTypes.STRING,
-    capacity_kg: DataTypes.INTEGER,
-    status: DataTypes.STRING,
+    booking_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    lat: DataTypes.DECIMAL,
+    lng: DataTypes.DECIMAL,
   },
   { timestamps: true },
 );
 
-export default TravellerProfile;
+export default ParcelTracking;

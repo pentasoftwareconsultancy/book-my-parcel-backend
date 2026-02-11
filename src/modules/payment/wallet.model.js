@@ -1,20 +1,24 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
 
-const TravellerProfile = sequelize.define(
-  "traveller_profiles",
+const Wallet = sequelize.define(
+  "wallets",
   {
     id: {
       type: DataTypes.UUID,
       primaryKey: true,
       defaultValue: DataTypes.UUIDV4,
     },
-    user_id: DataTypes.UUID,
-    vehicle_type: DataTypes.STRING,
-    capacity_kg: DataTypes.INTEGER,
-    status: DataTypes.STRING,
+    user_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    balance: {
+      type: DataTypes.DECIMAL,
+      defaultValue: 0,
+    },
   },
   { timestamps: true },
 );
 
-export default TravellerProfile;
+export default Wallet;
