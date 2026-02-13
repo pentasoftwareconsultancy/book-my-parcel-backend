@@ -108,7 +108,7 @@ export async function login(email, password) {
     where: { email },
     include: [
       { model: Role, through: { attributes: [] } },
-      { model: TravellerKYC, as: "TravellerKYC" } // exact alias
+      { model: TravellerKYC, as: "travellerKYC" } // exact alias
     ],
   });
 
@@ -148,7 +148,7 @@ export async function becomeTraveller(userId) {
     const user = await User.findByPk(userId, {
       include: [
         { model: Role },
-        { model: TravellerKYC, as: "TravellerKYC" }
+        { model: TravellerKYC, as: "travellerKYC" }
       ],
       transaction: t
     });
