@@ -1,7 +1,7 @@
 import express from "express";
 import routes from "./routes.js"; 
 import cors from "cors";
-
+import adminRoutes from "./modules/admin/admin.routes.js";
 
 const app = express();
 
@@ -16,7 +16,7 @@ app.use(express.json());
 app.use("/api", routes); 
 
 // admin login 
-// app.use("/admin", adminRoutes);
+app.use("/admin", adminRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({ message: "Book My Parcel Backend is running!" });
