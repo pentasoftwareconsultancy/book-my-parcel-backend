@@ -1,27 +1,3 @@
-// import Admin from "../modules/admin/admin.model.js";
-// import bcrypt from "bcryptjs";
-
-// export const createDefaultAdmin = async () => {
-//   const exists = await Admin.findOne({
-//     where: { email: "admin1@gmail.com" }
-//   });
-
-//   if (!exists) {
-//     const hashedPassword = await bcrypt.hash("admin1234", 10);
-
-//     await Admin.create({
-//       name: "Super Admin",
-//       email: "admin1@gmail.com",
-//       password: hashedPassword
-//     });
-
-//     console.log("✅ Default Admin Created");
-//   } else {
-//     console.log("ℹ️ Admin already exists");
-//   }
-// };
-
-
 
 import bcrypt from "bcrypt";
 import User from "../modules/user/user.model.js";

@@ -1,27 +1,42 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
+import Address from "./address.model.js";
 
 const Parcel = sequelize.define(
-  "parcels",
+  "parcel",
   {
-    id: {
-      type: DataTypes.UUID,
-      primaryKey: true,
-      defaultValue: DataTypes.UUIDV4,
-    },
-    user_id: DataTypes.UUID,
-    package_size: DataTypes.STRING,
-    weight: DataTypes.FLOAT,
-    length: DataTypes.FLOAT,
-    width: DataTypes.FLOAT,
-    height: DataTypes.FLOAT,
-    parcel_type: DataTypes.STRING,
-    delivery_speed: DataTypes.STRING,
-    parcel_value: DataTypes.FLOAT,
-    description: DataTypes.TEXT,
-    status: DataTypes.STRING,
+    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+    user_id: { type: DataTypes.UUID, allowNull: false },
+    package_size: { type: DataTypes.ENUM("small","medium","large","extra_large"), allowNull: false },
+    delivery_speed: { type: DataTypes.ENUM("standard","express","same_day"), allowNull: false },
+    weight: { type: DataTypes.FLOAT, allowNull: false },
+    length: { type: DataTypes.FLOAT },
+    width: { type: DataTypes.FLOAT },
+    height: { type: DataTypes.FLOAT },
+    description: { type: DataTypes.TEXT },
+    parcel_type: { type: DataTypes.STRING },
+    value: { type: DataTypes.FLOAT },
+    notes: { type: DataTypes.TEXT },
+    photos: { type: DataTypes.JSON },
+    pickup_address_id: { type: DataTypes.UUID, allowNull: false },
+    delivery_address_id: { type: DataTypes.UUID, allowNull: false },
+    selected_partner_id: { type: DataTypes.UUID },
+    price_quote: { type: DataTypes.FLOAT },
+    status: { 
+  type: DataTypes.ENUM(
+    "CREATED",
+    "MATCHING",
+    "CONFIRMED",
+    "IN_TRANSIT",
+    "DELIVERED",
+    "CANCELLED"
+  ),
+  defaultValue: "CREATED"
+}
+
   },
-  { timestamps: true },
+  { freezeTableName: true, timestamps: true }
 );
+
 
 export default Parcel;
