@@ -1,57 +1,49 @@
 import sequelize from "../../config/database.config.js";
-import Address from "../parcel/address.model.js";
-import Parcel from "../parcel/parcel.model.js";
 import Booking from "./booking.model.js";
+import BookingStatusLog from "./bookingStatusLog.model.js";
+import { BOOKING_STATUS, BOOKING_TRANSITIONS } from "../../middlewares/role.middleware.js";
 
-export async function createSendParcel(userId, data) {
+export async function updateBookingStatus(bookingId, newStatus, userId, extraData = {}) {
+
   return await sequelize.transaction(async (t) => {
+    const booking = await Booking.findByPk(bookingId, { transaction: t });
 
-    // 1️⃣ Pickup Address
-    const pickupAddress = await Address.create(
-      {
-        user_id: userId,
-        type: "PICKUP",
-        ...data.pickup,
-      },
-      { transaction: t }
-    );
+    if (!booking) throw new Error("Booking not found");
 
-    // 2️⃣ Delivery Address
-    const deliveryAddress = await Address.create(
-      {
-        user_id: userId,
-        type: "DELIVERY",
-        ...data.delivery,
-      },
-      { transaction: t }
-    );
+    const currentStatus = booking.status;
 
-    // 3️⃣ Parcel
-    const parcel = await Parcel.create(
-      {
-        user_id: userId,
-        ...data.parcel,
-        status: "CREATED",
-      },
-      { transaction: t }
-    );
+    const allowedTransitions = BOOKING_TRANSITIONS[currentStatus] || [];
 
-    // 4️⃣ Booking
-    const booking = await Booking.create(
-      {
-        user_id: userId,
-        parcel_id: parcel.id,
-        pickup_address_id: pickupAddress.id,
-        delivery_address_id: deliveryAddress.id,
-        amount: data.amount,
-        status: "CREATED",
-      },
-      { transaction: t }
-    );
+    if (!allowedTransitions.includes(newStatus)) {
+      throw new Error(`Cannot change status from ${currentStatus} to ${newStatus}`);
 
-    return {
+    }
+
+    if (newStatus === BOOKING_STATUS.CONFIRMED) {
+      booking.traveller_id = extraData.travellerId;
+      booking.trip_id = extraData.tripId;
+    }
+
+    //update status
+
+    booking.status = newStatus;
+
+    await booking.save({ transaction: t });
+
+    //log status change
+
+    await BookingStatusLog.create({
       booking_id: booking.id,
-      parcel_id: parcel.id,
-    };
-  });
+      status: newStatus,
+      changed_by: userId,
+    },
+      { transaction: t }
+    );
+
+    return booking;
+
+
+
+  })
+
 }

@@ -13,7 +13,7 @@ import AadhaarVerification from "../modules/traveller/aadhaarVerification.model.
 import TravellerKYC from "./traveller/travellerKYC.model.js";
 
 /* PARCEL */
-import Parcel from "../modules/parcel/parcel.model.js";
+import Parcel from "./parcel/parcel.model.js";
 import ParcelProof from "../modules/parcel/parcelProof.model.js";
 
 /* BOOKING */
@@ -31,6 +31,7 @@ import ParcelTracking from "../modules/tracking/parcelTracking.model.js";
 
 /* ADDRESS */
 import Address from "./parcel/address.model.js";
+
 
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
@@ -135,6 +136,7 @@ BookingStatusLog.belongsTo(Booking, {
   foreignKey: "booking_id",
 });
 
+
 /* ===========================
    BOOKING ↔ PAYMENT (1–1)
    =========================== */
@@ -188,7 +190,7 @@ ParcelProof.belongsTo(Booking, {
 
 
 
-// travellerkyc
+// // travellerkyc
 
 User.hasOne(TravellerKYC, {
   foreignKey: "user_id",
@@ -202,56 +204,78 @@ TravellerKYC.belongsTo(User, {
 });
 
 /* ===========================
-   USER ↔ ADDRESS (1–N)
+   PARCEL ↔ ADDRESS (PICKUP & DELIVERY)
    =========================== */
-User.hasMany(Address, {
-  foreignKey: "user_id",
-  onDelete: "CASCADE",
-});
-Address.belongsTo(User, {
-  foreignKey: "user_id",
-});
 
-/* ===========================
-   BOOKING ↔ PICKUP ADDRESS
-   =========================== */
-Booking.belongsTo(Address, {
-  foreignKey: "pickup_address_id",
-  as: "pickupAddress",
-});
-
-Address.hasMany(Booking, {
-  foreignKey: "pickup_address_id",
-  as: "pickupBookings",
-});
-
-/* ===========================
-   BOOKING ↔ DELIVERY ADDRESS
-   =========================== */
-Booking.belongsTo(Address, {
-  foreignKey: "delivery_address_id",
-  as: "deliveryAddress",
-});
-
-Address.hasMany(Booking, {
-  foreignKey: "delivery_address_id",
-  as: "deliveryBookings",
-});
-
-/* ===========================
-   USER (SENDER) ↔ BOOKING (1–N)
-   =========================== */
-User.hasMany(Booking, {
-  foreignKey: "user_id",
-  as: "senderBookings",
-});
-
-Booking.belongsTo(User, {
-  foreignKey: "user_id",
-  as: "sender",
-});
+Parcel.belongsTo(Address, { as: "pickup_address", foreignKey: "pickup_address_id" ,as:"pickupAddress" });
+Parcel.belongsTo(Address, { as: "delivery_address", foreignKey: "delivery_address_id",as:"deliveryAddress" });
 
 
+
+// /* ===========================
+//    USER ↔ ADDRESS (1–N)
+//    =========================== */
+// User.hasMany(Address, {
+//   foreignKey: "user_id",
+//   onDelete: "CASCADE",
+// });
+// Address.belongsTo(User, {
+//   foreignKey: "user_id",
+// });
+
+// /* ===========================
+//    BOOKING ↔ PICKUP ADDRESS
+//    =========================== */
+// Booking.belongsTo(Address, {
+//   foreignKey: "pickup_address_id",
+//   as: "pickupAddress",
+// });
+
+// Address.hasMany(Booking, {
+//   foreignKey: "pickup_address_id",
+//   as: "pickupBookings",
+// });
+
+// /* ===========================
+//    BOOKING ↔ DELIVERY ADDRESS
+//    =========================== */
+// Booking.belongsTo(Address, {
+//   foreignKey: "delivery_address_id",
+//   as: "deliveryAddress",
+// });
+
+// Address.hasMany(Booking, {
+//   foreignKey: "delivery_address_id",
+//   as: "deliveryBookings",
+// });
+
+// /* ===========================
+//    USER (SENDER) ↔ BOOKING (1–N)
+//    =========================== */
+// User.hasMany(Booking, {
+//   foreignKey: "user_id",
+//   as: "senderBookings",
+// });
+
+// Booking.belongsTo(User, {
+//   foreignKey: "user_id",
+//   as: "sender",
+//   onDelete: "CASCADE",
+// });
+
+// //* ===========================
+// //   Booking status log - who changed the status
+// //   =========================== */
+
+// // BookingStatusLog.belongsTo(User, {
+// //   foreignKey: "changed_by",
+// //   as: "changedBy",
+// // });
+
+// // User.hasMany(BookingStatusLog, {
+// //   foreignKey: "changed_by",
+// //   as: "statusChanges",
+// // });
 
 
 
