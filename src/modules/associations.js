@@ -207,8 +207,8 @@ TravellerKYC.belongsTo(User, {
    PARCEL ↔ ADDRESS (PICKUP & DELIVERY)
    =========================== */
 
-Parcel.belongsTo(Address, { as: "pickup_address", foreignKey: "pickup_address_id" ,as:"pickupAddress" });
-Parcel.belongsTo(Address, { as: "delivery_address", foreignKey: "delivery_address_id",as:"deliveryAddress" });
+Parcel.belongsTo(Address, { as: "pickupAddress", foreignKey: "pickup_address_id" });
+Parcel.belongsTo(Address, { as: "deliveryAddress", foreignKey: "delivery_address_id" });
 
 
 
@@ -279,6 +279,23 @@ Parcel.belongsTo(Address, { as: "delivery_address", foreignKey: "delivery_addres
 
 
 
-export default function applyAssociations() {
-  return true;
-}
+export { 
+  User, 
+  Role, 
+  UserRole, 
+  UserProfile, 
+  TravellerProfile, 
+  TravellerTrip, 
+  AadhaarVerification, 
+  TravellerKYC, 
+  Parcel, 
+  ParcelProof, 
+  Booking, 
+  BookingStatusLog, 
+  Payment, 
+  Wallet, 
+  WalletTransaction, 
+  Refund, 
+  ParcelTracking, 
+  Address 
+};

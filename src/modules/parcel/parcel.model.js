@@ -38,5 +38,11 @@ const Parcel = sequelize.define(
   { freezeTableName: true, timestamps: true }
 );
 
+// Define associations
+Parcel.associate = function(models) {
+  Parcel.hasOne(models.Booking, { foreignKey: 'parcel_id', as: 'booking' });
+  Parcel.belongsTo(models.Address, { foreignKey: 'pickup_address_id', as: 'pickupAddress' });
+  Parcel.belongsTo(models.Address, { foreignKey: 'delivery_address_id', as: 'deliveryAddress' });
+};
 
 export default Parcel;

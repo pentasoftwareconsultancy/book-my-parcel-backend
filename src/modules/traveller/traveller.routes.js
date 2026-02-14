@@ -50,6 +50,7 @@ router.patch(
   ctrl.updateKYCStatus
 );
 
-
+// Get nearby travelers
+router.get("/nearby", ctrl.getNearbyTravelers);
 
 export default router;

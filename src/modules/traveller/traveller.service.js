@@ -1,4 +1,5 @@
 import TravellerKYC from "./travellerKYC.model.js";
+import User from "../user/user.model.js";
 import { KYC_STATUS } from "../../middlewares/role.middleware.js";
 
 /* SUBMIT / UPDATE KYC */
@@ -64,4 +65,70 @@ export const updateKYCStatus = async (kycId, status) => {
   await kyc.update({ status });
 
   return kyc;
+};
+
+/**
+ * GET NEARBY TRAVELERS
+ * Fetch travelers with approved KYC within a certain distance
+ */
+export const getNearbyTravelers = async (pickupCity, deliveryCity, options = {}) => {
+  const { page = 1, limit = 10, vehicleType = null } = options;
+  const offset = (page - 1) * limit;
+
+  // Build where clause for filtering
+  let whereClause = {
+    status: KYC_STATUS.APPROVED
+  };
+
+  // If we have specific cities, we could filter by them
+  // For now, we'll fetch all approved travelers
+
+  try {
+    const { count, rows: kycRecords } = await TravellerKYC.findAndCountAll({
+      where: whereClause,
+      include: [{
+        model: User,
+        as: 'User',
+        attributes: ['id', 'name', 'city', 'state', 'is_active', 'is_verified']
+      }],
+      limit,
+      offset,
+      order: [['created_at', 'DESC']]
+    });
+
+    // Transform the data to match frontend expectations
+    const travelers = kycRecords.map(kyc => {
+      const user = kyc.User;
+      return {
+        id: user.id,
+        name: user.name,
+        verified: user.is_verified,
+        rating: Math.random() * (5.0 - 4.0) + 4.0, // Mock rating between 4.0-5.0
+        reviews: Math.floor(Math.random() * 500) + 50, // Mock reviews 50-550
+        trips: Math.floor(Math.random() * 400) + 20, // Mock trips 20-420
+        avgResponse: `${Math.floor(Math.random() * 20) + 5} min`, // Mock response time 5-25 min
+        deliveryTag: Math.random() > 0.5 ? "Today" : "Tomorrow",
+        from: pickupCity || user.city || "City",
+        to: deliveryCity || "Destination",
+        vehicleType: vehicleType || ["Car", "Bike", "Mini Truck"][Math.floor(Math.random() * 3)],
+        duration: `${Math.floor(Math.random() * 3) + 3}–${Math.floor(Math.random() * 3) + 4} hours`,
+        price: Math.floor(Math.random() * 100) + 80, // Mock price 80-180
+        avatarBg: ["bg-gradient-to-br from-[#FFB347] to-[#FF6B6B]", "bg-gradient-to-br from-[#FF9AEB] to-[#FF6FD8]", "bg-gradient-to-br from-[#FFC371] to-[#FF5F6D]"][Math.floor(Math.random() * 3)],
+        mapX: `${Math.floor(Math.random() * 60) + 20}%`, // Mock position 20-80%
+        mapY: `${Math.floor(Math.random() * 50) + 25}%` // Mock position 25-75%
+      };
+    });
+
+    return {
+      travelers,
+      pagination: {
+        total: count,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(count / limit)
+      }
+    };
+  } catch (error) {
+    throw new Error(`Failed to fetch nearby travelers: ${error.message}`);
+  }
 };

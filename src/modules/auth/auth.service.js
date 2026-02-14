@@ -8,6 +8,9 @@ import TravellerKYC from "../traveller/travellerKYC.model.js";
 import { ROLES, KYC_STATUS } from "../../middlewares/role.middleware.js";
 import { generateToken } from "../../utils/jwt.util.js";
 
+// Export generateToken for use in controllers
+export { generateToken };
+
 /**
  * SIGNUP
  */

@@ -1,6 +1,7 @@
 import sequelize from "../../config/database.config.js";
 import Parcel from "./parcel.model.js";
 import Address from "./address.model.js";
+import Booking from "../booking/booking.model.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
 import { BOOKING_STATUS ,BOOKING_TRANSITIONS} from "../../middlewares/role.middleware.js";
 
@@ -60,8 +61,17 @@ export async function createParcelRequest(data, files) {
       { transaction: t }
     );
 
+    // Create corresponding booking
+    const booking = await Booking.create(
+      {
+        parcel_id: parcel.id,
+        status: BOOKING_STATUS.CREATED,
+      },
+      { transaction: t }
+    );
+
     await t.commit();
-    return { parcel, pickupAddress, deliveryAddress };
+    return { parcel, booking, pickupAddress, deliveryAddress };
   } catch (error) {
     await t.rollback();
     throw error;
@@ -70,7 +80,7 @@ export async function createParcelRequest(data, files) {
 
 
 export async function getUserParcelRequests(userId) {
-  const parcels = await Parcel.findOne({
+  const parcels = await Parcel.findAll({
     where: { user_id: userId },
     include: [
       {
@@ -81,9 +91,36 @@ export async function getUserParcelRequests(userId) {
         model: Address,
         as: "deliveryAddress",
       },
+      {
+        model: Booking, // Include booking data
+        as: "booking",
+      },
     ],
     order: [["createdAt", "DESC"]],
   });
 
   return parcels;
+}
+
+// New function to get a single parcel by ID
+export async function getParcelById(parcelId) {
+  const parcel = await Parcel.findOne({
+    where: { id: parcelId },
+    include: [
+      {
+        model: Address,
+        as: "pickupAddress",
+      },
+      {
+        model: Address,
+        as: "deliveryAddress",
+      },
+      {
+        model: Booking, // Include booking data
+        as: "booking",
+      },
+    ],
+  });
+
+  return parcel;
 }
