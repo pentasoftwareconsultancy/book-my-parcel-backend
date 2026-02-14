@@ -5,6 +5,7 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import parcelRoutes from "./modules/parcel/parcel.routes.js"
 import userRoutes from "./modules/user/user.routes.js";
 
+import travellerRoutes from "./modules/traveller/traveller.routes.js";
 const router = express.Router();
 
 // Module routes
@@ -16,4 +17,7 @@ router.use("/user", userRoutes); // /api/user/...
 // Admin Routes
 router.use("/admin", adminRoutes); // /api/admin/...
 
+
+
+router.use("/traveller", travellerRoutes)
 export default router;
