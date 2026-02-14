@@ -1,42 +1,15 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
 
-const Booking = sequelize.define(
-  "bookings",
-  {
-    id: {
-      type: DataTypes.UUID,
-      primaryKey: true,
-      defaultValue: DataTypes.UUIDV4,
-    },
-    user_id: DataTypes.UUID,
-    parcel_id: DataTypes.UUID,
-
-    pickup_address_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-    },
-
-    delivery_address_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-    },
-
-    amount: DataTypes.FLOAT,
-
-    status: {
-      type: DataTypes.ENUM(
-        "CREATED",
-        "MATCHING",
-        "CONFIRMED",
-        "IN_TRANSIT",
-        "DELIVERED",
-        "CANCELLED"
-      ),
-      defaultValue: "CREATED",
-    },
-  },
-  { timestamps: true },
-);
+const Booking = sequelize.define("booking", {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  parcel_id: { type: DataTypes.UUID, allowNull: false },
+  traveller_id: { type: DataTypes.UUID, allowNull: true }, // optional, assigned later
+  status: { type: DataTypes.ENUM("CREATED","MATCHING","CONFIRMED","IN_TRANSIT","DELIVERED","CANCELLED"), defaultValue: "CREATED" },
+  assigned_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+}, {
+  freezeTableName: true,
+  timestamps: true
+});
 
 export default Booking;

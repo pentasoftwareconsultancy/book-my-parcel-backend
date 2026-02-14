@@ -1,19 +1,44 @@
-import { createSendParcel } from "./booking.service.js";
+import { updateBookingStatus } from "./booking.service.js";
 
-export const sendParcel = async (req, res) => {
+export async function updateBookingStatusController(req, res) {
   try {
-    const userId = req.user.id; // from auth middleware
-    const result = await createSendParcel(userId, req.body);
+    // 1️⃣ Get booking ID from URL
+    const { bookingId } = req.params;
 
-    res.status(201).json({
+    // 2️⃣ Get new status from body
+    const { status, travellerId, tripId } = req.body;
+
+    // 3️⃣ Logged-in user (who is changing status)
+    const userId = req.user.id;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Status is required",
+      });
+    }
+
+    // 4️⃣ Call Service
+    const updatedBooking = await updateBookingStatus(
+      bookingId,
+      status,
+      userId,
+      { travellerId, tripId }   // extra data
+    );
+
+    // 5️⃣ Success response
+    return res.status(200).json({
       success: true,
-      message: "Parcel booked successfully",
-      data: result,
+      message: "Booking status updated successfully",
+      data: updatedBooking,
     });
+
   } catch (error) {
-    res.status(400).json({
+    console.error("Update Booking Status Error:", error);
+
+    return res.status(400).json({
       success: false,
       message: error.message,
     });
   }
-};
+}

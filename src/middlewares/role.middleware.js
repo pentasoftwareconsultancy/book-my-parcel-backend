@@ -12,6 +12,13 @@ export const KYC_STATUS = {
   REJECTED: "REJECTED"
 };
 
+export const KYC_TRANSITIONS = {
+  NOT_STARTED: ["PENDING"],
+  PENDING: ["APPROVED", "REJECTED"],
+  APPROVED: [],
+  REJECTED: [],
+};
+
 export const BOOKING_STATUS = {
   CREATED: "CREATED",
   MATCHING: "MATCHING",
@@ -22,6 +29,14 @@ export const BOOKING_STATUS = {
 };
 
 
+/* Allowed transitions */
+export const BOOKING_TRANSITIONS = {
+  CREATED: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["IN_TRANSIT", "CANCELLED"],
+  IN_TRANSIT: ["DELIVERED"],
+  DELIVERED: [],
+  CANCELLED: []
+};
 
 // for role confirmation
 
