@@ -1,9 +1,12 @@
 import * as travellerService from "./traveller.service.js";
+import { ROLES } from "../../middlewares/role.middleware.js";
+
 
 /* SUBMIT KYC */
 export const submitKYC = async (req, res, next) => {
   try {
     const userId = req.user.id;
+    console.log("User ID from token:", userId);
 
     const data = await travellerService.submitKYC(
       userId,
@@ -39,7 +42,8 @@ export const getMyKYC = async (req, res, next) => {
 
 
 // update 
-/* UPDATE KYC STATUS */
+
+
 export const updateKYCStatus = async (req, res, next) => {
   try {
     const { id } = req.params;

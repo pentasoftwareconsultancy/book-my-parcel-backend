@@ -5,6 +5,9 @@ import fs from "fs";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import * as ctrl from "./traveller.controller.js";
 
+import { validateKYC , validateStatus } from "../../middlewares/validation.middleware.js";
+
+
 const router = express.Router();
 
 const uploadDir = "uploads/kyc";
@@ -32,6 +35,7 @@ router.post(
     { name: "drivingPhoto", maxCount: 1 },
     { name: "selfie", maxCount: 1 },
   ]),
+  validateKYC,
   ctrl.submitKYC
 );
 
@@ -42,8 +46,10 @@ router.get("/kyc", authMiddleware, ctrl.getMyKYC);
 router.patch(
   "/kyc/status/:id",
   authMiddleware,
+  validateStatus, 
   ctrl.updateKYCStatus
 );
+
 
 
 export default router;
