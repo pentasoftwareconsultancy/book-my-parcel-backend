@@ -12,4 +12,9 @@ const Booking = sequelize.define("booking", {
   timestamps: true
 });
 
+// Define associations
+Booking.associate = function(models) {
+  Booking.belongsTo(models.Parcel, { foreignKey: 'parcel_id', as: 'parcel' });
+};
+
 export default Booking;

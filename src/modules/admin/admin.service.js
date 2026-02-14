@@ -1,5 +1,8 @@
 import sequelize from "../../config/database.config.js";
 import { QueryTypes } from "sequelize";
+import TravellerKYC from "../traveller/travellerKYC.model.js";
+import User from "../user/user.model.js";
+import { KYC_STATUS } from "../../middlewares/role.middleware.js";
 
 /**
  * Admin Fetch Users with Pagination + Role Filter
@@ -14,16 +17,44 @@ export const getAllUsers = async ({ page = 1, limit = 10, role = null }) => {
   let replacements = { limit, offset };
 
   if (role) {
-    whereClause = "WHERE role = :role";
+    // Role filtering requires joining with user_roles and roles tables
+    whereClause = `
+      WHERE EXISTS (
+        SELECT 1 FROM user_roles ur 
+        JOIN roles r ON ur.role_id = r.id 
+        WHERE ur.user_id = u.id AND r.name = :role
+      )
+    `;
     replacements.role = role;
   }
 
   // Fetch users
   const users = await sequelize.query(
     `
-    SELECT * FROM users
+    SELECT 
+      u.id,
+      u.name,
+      u.phone_number,
+      u.alternate_phone,
+      u.email,
+      u.address,
+      u.city,
+      u.state,
+      u.password,
+      u.is_active,
+      u.is_verified,
+      u."createdAt",
+      u."updatedAt",
+      CASE 
+        WHEN EXISTS (
+          SELECT 1 FROM traveller_kyc tk 
+          WHERE tk.user_id = u.id AND tk.status = 'APPROVED'
+        ) THEN true 
+        ELSE false 
+      END as kyc_verified
+    FROM users u
     ${whereClause}
-    ORDER BY createdAt DESC
+    ORDER BY u."createdAt" DESC
     LIMIT :limit OFFSET :offset
     `,
     {
@@ -35,7 +66,7 @@ export const getAllUsers = async ({ page = 1, limit = 10, role = null }) => {
   // Count total users (for pagination meta)
   const countResult = await sequelize.query(
     `
-    SELECT COUNT(*) as total FROM users
+    SELECT COUNT(*) as total FROM users u
     ${whereClause}
     `,
     {
@@ -102,5 +133,113 @@ export const getAllBookings = async ({ page = 1, limit = 10 }) => {
     type: QueryTypes.SELECT,
     replacements: { limit, offset },
   });
+};
+
+/**
+ * Get travelers for KYC approval with pagination
+ * @param {number} page
+ * @param {number} limit
+ * @param {string} status
+ */
+export const getTravelersForKYC = async ({ page = 1, limit = 10, status = null }) => {
+  const offset = (page - 1) * limit;
+
+  // Build where clause for KYC status filtering
+  let whereClause = "";
+  let replacements = { limit, offset };
+
+  if (status) {
+    whereClause = "WHERE kyc.status = :status";
+    replacements.status = status;
+  }
+
+  // Query to get travelers with their KYC status
+  const travelers = await sequelize.query(
+    `
+    SELECT 
+      u.id AS user_id,
+      u.name,
+      u.email,
+      u.phone_number,
+      u.city,
+      u.state,
+      u."createdAt" AS user_created_at,
+      kyc.id AS kyc_id,
+      kyc.status AS kyc_status,
+      kyc.aadhar_front,
+      kyc.aadhar_back,
+      kyc.pan_front,
+      kyc.pan_back,
+      kyc.driving_photo,
+      kyc.selfie,
+      kyc.created_at AS kyc_created_at,
+      kyc.updated_at AS kyc_updated_at
+    FROM users u
+    JOIN traveller_kyc kyc ON u.id = kyc.user_id
+    ${whereClause}
+    ORDER BY kyc.created_at DESC
+    LIMIT :limit OFFSET :offset
+    `,
+    {
+      replacements,
+      type: QueryTypes.SELECT
+    }
+  );
+
+  // Count total travelers for pagination
+  const countResult = await sequelize.query(
+    `
+    SELECT COUNT(*) as total 
+    FROM traveller_kyc kyc
+    JOIN users u ON u.id = kyc.user_id
+    ${whereClause}
+    `,
+    {
+      replacements: status ? { status } : {},
+      type: QueryTypes.SELECT
+    }
+  );
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    travelers,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit)
+    }
+  };
+};
+
+/**
+ * Update traveler KYC status
+ * @param {string} kycId
+ * @param {string} status
+ */
+export const updateTravelerKYCStatus = async (kycId, status) => {
+  const kyc = await TravellerKYC.findByPk(kycId);
+  
+  if (!kyc) {
+    throw new Error("KYC record not found");
+  }
+
+  const validStatuses = Object.values(KYC_STATUS);
+  if (!validStatuses.includes(status)) {
+    throw new Error("Invalid status value");
+  }
+
+  await kyc.update({ status });
+  
+  // Also update user's kyc_verified status if approved
+  if (status === KYC_STATUS.APPROVED) {
+    const user = await User.findByPk(kyc.user_id);
+    if (user) {
+      await user.update({ kyc_verified: true });
+    }
+  }
+
+  return kyc;
 };
 
