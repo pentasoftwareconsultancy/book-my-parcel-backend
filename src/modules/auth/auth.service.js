@@ -7,6 +7,8 @@ import UserRole from "../user/userRole.model.js";
 import TravellerKYC from "../traveller/travellerKYC.model.js";
 import { ROLES, KYC_STATUS } from "../../middlewares/role.middleware.js";
 import { generateToken } from "../../utils/jwt.util.js";
+import UserProfile from "../user/userProfile.model.js";
+import TravellerProfile from "../traveller/travellerProfile.model.js"
 
 // Export generateToken for use in controllers
 export { generateToken };
@@ -34,8 +36,43 @@ export async function signup(userData, selectedRole) {
       },
       { transaction: t }
     );
-
     console.log("User created with ID:", user.id);
+
+
+    // 2️⃣ Create profile depending on role
+    let travellerProfile;
+    if (selectedRole === ROLES.TRAVELLER) {
+      // Create TravellerProfile
+      travellerProfile = await TravellerProfile.create(
+        { user_id: user.id, 
+          vehicle_type: null, 
+          capacity_kg: null, 
+          status: "PENDING" },
+        { transaction: t }
+      );
+      console.log("TravellerProfile created for user:", travellerProfile.user_id);
+
+      // Also create KYC entry
+      await TravellerKYC.create(
+        { user_id: user.id, status: KYC_STATUS.PENDING },
+        { transaction: t }
+      );
+      console.log("Traveller KYC created.");
+    } else {
+      // Create UserProfile for regular users
+      profile = await UserProfile.create(
+        {
+          user_id: user.id,
+          full_name: name,
+          address: address || null,
+          city: city || null,
+          alternate_phone: alternate_phone || null
+        },
+        { transaction: t }
+      );
+      console.log("UserProfile created for user:", user.id);
+    }
+
 
     // 2️⃣ Helper to fetch role safely
     async function getRoleByName(roleName) {
@@ -72,7 +109,7 @@ export async function signup(userData, selectedRole) {
     }
     console.log("Roles to assign:", rolesToAssign.map(r => r.name));
 
-    
+
     // 4️⃣ Store roles in UserRole table
     for (const role of rolesToAssign) {
       await UserRole.create(
@@ -91,11 +128,13 @@ export async function signup(userData, selectedRole) {
 
     return {
       user,
+      travellerProfile,
       token,
       roles: rolesToAssign.map(r => r.name),
       kycStatus
     };
-    console.log("Signup process completed for user ID:", user.id);
+
+
   });
 }
 
@@ -110,8 +149,12 @@ export async function login(email, password) {
   const user = await User.findOne({
     where: { email },
     include: [
+
+      { model: UserProfile, as: "profile" },
+      { model: TravellerProfile, as: "travellerProfile" },
       { model: Role, through: { attributes: [] } },
-      { model: TravellerKYC, as: "travellerKYC" } // exact alias
+      { model: TravellerKYC, as: "travellerKYC" }
+
     ],
   });
 
@@ -207,6 +250,13 @@ export async function becomeTraveller(userId) {
 
     }
     console.log("Traveller KYC ensured for user:", user.id);
+
+    // ✅ 5️⃣ Ensure TravellerProfile exists
+    let travellerProfile = await TravellerProfile.findOne({ where: { user_id: user.id }, transaction: t });
+    if (!travellerProfile) {
+      travellerProfile = await TravellerProfile.create({ user_id: user.id }, { transaction: t });
+      console.log("TravellerProfile created for user:", user.id);
+    }
 
     // 5️⃣ Fetch updated roles
     const roles = await Role.findAll({
