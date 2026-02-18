@@ -16,10 +16,13 @@ const UserProfile = sequelize.define(
     full_name: DataTypes.STRING,
     address: DataTypes.TEXT,
     city: DataTypes.STRING,
-    lat: DataTypes.DECIMAL,
+    state: DataTypes.STRING,
+    alternate_phone: DataTypes.STRING,
+    
+     lat: DataTypes.DECIMAL,
     lng: DataTypes.DECIMAL,
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 export default UserProfile;
