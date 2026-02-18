@@ -13,6 +13,7 @@ const User = sequelize.define(
     phone_number: DataTypes.STRING,
     alternate_phone: DataTypes.STRING,
     email: DataTypes.STRING,
+    password: DataTypes.STRING,
     
   },
   {

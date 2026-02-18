@@ -60,7 +60,7 @@ export async function signup(userData, selectedRole) {
       console.log("Traveller KYC created.");
     } else {
       // Create UserProfile for regular users
-      profile = await UserProfile.create(
+      travellerProfile = await UserProfile.create(
         {
           user_id: user.id,
           full_name: name,
@@ -148,6 +148,7 @@ export async function login(email, password) {
   // ✅ Correct include: use model reference, not string, with alias
   const user = await User.findOne({
     where: { email },
+    attributes: { include: ["password"] },
     include: [
 
       { model: UserProfile, as: "profile" },
