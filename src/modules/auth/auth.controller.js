@@ -20,6 +20,18 @@ export async function signupController(req, res) {
   }
 }
 
+// update
+
+export const updateUserProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;; // must match token payload
+    const result = await authService.updateProfile(userId, req.body);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 /**
  * LOGIN CONTROLLER
