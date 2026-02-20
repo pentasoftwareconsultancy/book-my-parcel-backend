@@ -1,7 +1,8 @@
 import TravellerKYC from "./travellerKYC.model.js";
 import User from "../user/user.model.js";
 import { KYC_STATUS } from "../../middlewares/role.middleware.js";
-
+import TravellerRoute from "./travellerRoute.model.js";
+import TravellerProfile from "./travellerProfile.model.js";
 /* SUBMIT / UPDATE KYC */
 export const submitKYC = async (userId, body, files) => {
 
@@ -131,4 +132,168 @@ export const getNearbyTravelers = async (pickupCity, deliveryCity, options = {})
   } catch (error) {
     throw new Error(`Failed to fetch nearby travelers: ${error.message}`);
   }
+};
+
+
+
+
+// Route Service
+
+/* CREATE ROUTE */
+export const createRoute = async (userId, body) => {
+  // Find traveller profile
+  const profile = await TravellerProfile.findOne({
+    where: { user_id: userId }
+  });
+
+  if (!profile) {
+    throw new Error("Traveller profile not found. Please complete your profile first.");
+  }
+
+  // Create route
+  const route = await TravellerRoute.create({
+    traveller_profile_id: profile.id,
+    origin_city: body.originCity,
+    origin_state: body.originState,
+    stops: body.stops || [],
+    destination_city: body.destinationCity,
+    destination_state: body.destinationState,
+    departure_date: body.departureDate,
+    departure_time: body.departureTime,
+    arrival_date: body.arrivalDate,
+    arrival_time: body.arrivalTime,
+    is_recurring: body.isRecurring || false,
+    recurring_days: body.recurringDays || [],
+    vehicle_type: body.vehicleType,
+    vehicle_number: body.vehicleNumber,
+    max_weight_kg: body.maxWeightKg,
+    available_space_description: body.availableSpaceDescription,
+    accepted_parcel_types: body.acceptedParcelTypes || [],
+    min_earning_per_delivery: body.minEarningPerDelivery,
+  });
+
+  return route;
+};
+
+/* GET MY ROUTES */
+export const getMyRoutes = async (userId, options = {}) => {
+  const { status, page = 1, limit = 10 } = options;
+  const offset = (page - 1) * limit;
+
+  // Find traveller profile
+  const profile = await TravellerProfile.findOne({
+    where: { user_id: userId }
+  });
+
+  if (!profile) {
+    return { routes: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } };
+  }
+
+  // Build where clause
+  const whereClause = { traveller_profile_id: profile.id };
+  if (status) {
+    whereClause.status = status;
+  }
+
+  const { count, rows: routes } = await TravellerRoute.findAndCountAll({
+    where: whereClause,
+    limit: parseInt(limit),
+    offset: parseInt(offset),
+    order: [['created_at', 'DESC']]
+  });
+
+  return {
+    routes,
+    pagination: {
+      total: count,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(count / limit)
+    }
+  };
+};
+
+/* GET ROUTE BY ID */
+export const getRouteById = async (routeId) => {
+  const route = await TravellerRoute.findByPk(routeId, {
+    include: [{
+      model: TravellerProfile,
+      as: 'travellerProfile',
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'name', 'phone_number']
+      }]
+    }]
+  });
+
+  if (!route) {
+    throw new Error("Route not found");
+  }
+
+  return route;
+};
+
+/* UPDATE ROUTE */
+export const updateRoute = async (routeId, userId, body) => {
+  const route = await TravellerRoute.findByPk(routeId, {
+    include: [{
+      model: TravellerProfile,
+      as: 'travellerProfile'
+    }]
+  });
+
+  if (!route) {
+    throw new Error("Route not found");
+  }
+
+  // Verify ownership
+  if (route.travellerProfile.user_id !== userId) {
+    throw new Error("Unauthorized to update this route");
+  }
+
+  // Update route
+  await route.update({
+    origin_city: body.originCity,
+    origin_state: body.originState,
+    stops: body.stops,
+    destination_city: body.destinationCity,
+    destination_state: body.destinationState,
+    departure_date: body.departureDate,
+    departure_time: body.departureTime,
+    arrival_date: body.arrivalDate,
+    arrival_time: body.arrivalTime,
+    is_recurring: body.isRecurring,
+    recurring_days: body.recurringDays,
+    vehicle_type: body.vehicleType,
+    vehicle_number: body.vehicleNumber,
+    max_weight_kg: body.maxWeightKg,
+    available_space_description: body.availableSpaceDescription,
+    accepted_parcel_types: body.acceptedParcelTypes,
+    min_earning_per_delivery: body.minEarningPerDelivery,
+    status: body.status,
+  });
+
+  return route;
+};
+
+/* DELETE ROUTE */
+export const deleteRoute = async (routeId, userId) => {
+  const route = await TravellerRoute.findByPk(routeId, {
+    include: [{
+      model: TravellerProfile,
+      as: 'travellerProfile'
+    }]
+  });
+
+  if (!route) {
+    throw new Error("Route not found");
+  }
+
+  // Verify ownership
+  if (route.travellerProfile.user_id !== userId) {
+    throw new Error("Unauthorized to delete this route");
+  }
+
+  await route.destroy();
 };

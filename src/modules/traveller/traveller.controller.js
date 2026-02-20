@@ -7,7 +7,6 @@ import User from "../user/user.model.js";
 import TravellerTrip from "./travellerTrip.model.js";
 import sequelize from "../../config/database.config.js";
 
-
 /* SUBMIT KYC */
 export const submitKYC = async (req, res, next) => {
   try {
@@ -49,7 +48,6 @@ export const getMyKYC = async (req, res, next) => {
 
 // update 
 
-
 export const updateKYCStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -68,8 +66,8 @@ export const updateKYCStatus = async (req, res, next) => {
   }
 };
 
-/**
- * GET NEARBY TRAVELERS
+/*
+ GET NEARBY TRAVELERS
  */
 export const getNearbyTravelers = async (req, res, next) => {
   try {
@@ -250,5 +248,85 @@ export const getTravelerStats = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+/* CREATE ROUTE */
+export const createRoute = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const data = await travellerService.createRoute(userId, req.body);
+    
+    res.status(201).json({
+      success: true,
+      message: "Route created successfully",
+      data
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* GET MY ROUTES */
+export const getMyRoutes = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { status, page = 1, limit = 10 } = req.query;
+    
+    const data = await travellerService.getMyRoutes(userId, { status, page, limit });
+    
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* GET ROUTE BY ID */
+export const getRouteById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const data = await travellerService.getRouteById(id);
+    
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* UPDATE ROUTE */
+export const updateRoute = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const data = await travellerService.updateRoute(id, userId, req.body);
+    
+    res.status(200).json({
+      success: true,
+      message: "Route updated successfully",
+      data
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* DELETE ROUTE */
+export const deleteRoute = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    await travellerService.deleteRoute(id, userId);
+    
+    res.status(200).json({
+      success: true,
+      message: "Route deleted successfully"
+    });
+  } catch (err) {
+    next(err);
   }
 };
