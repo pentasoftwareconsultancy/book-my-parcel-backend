@@ -9,20 +9,17 @@ import { seedRoles } from "./src/utils/seedRoles.js";
 import { createDefaultAdmin } from "./src/utils/createDefaultAdmin.js";
 const startServer = async () => {
   try {
-    
     await initDatabase();
 
-    
     await sequelize.authenticate();
     console.log("Application Connected to Database");
 
-    
     await sequelize.sync({ force: false });
     console.log("Tables Created with Relations");
 
     //STEP 4: Seed static roles
     await seedRoles();
-      // STEP 5: Create default admin
+    // STEP 5: Create default admin
     await createDefaultAdmin();
 
     const PORT = process.env.PORT || 3000;
@@ -34,6 +31,5 @@ const startServer = async () => {
     process.exit(1);
   }
 };
-
 
 startServer();
