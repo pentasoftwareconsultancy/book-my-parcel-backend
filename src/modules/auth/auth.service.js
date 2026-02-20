@@ -53,13 +53,15 @@ export async function signup(userData, selectedRole) {
     let travellerProfile;
     if (selectedRole === ROLES.TRAVELLER) {
       // Create TravellerProfile
+      
       travellerProfile = await TravellerProfile.create(
-        {
-          user_id: user.id,
-          vehicle_type: null,
-          capacity_kg: null,
-          status: "PENDING"
-        },
+        { user_id: user.id, 
+           name: user.name,
+          email: user.email,
+           phone_number: user.phone_number,
+          vehicle_type: null, 
+          capacity_kg: null, 
+          status: "PENDING" },
         { transaction: t }
       );
       console.log("TravellerProfile created for user:", travellerProfile.user_id);
@@ -149,6 +151,59 @@ export async function signup(userData, selectedRole) {
 
   });
 }
+
+
+
+
+
+/**
+ * UPDATE PROFILE 
+ */
+
+export async function updateProfile(userId, updateData) {
+  // 1️⃣ Find user
+  const user = await User.findByPk(userId);
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // 2️⃣ Update USER table
+  await user.update({
+    name: updateData.name ?? user.name,
+    email: updateData.email ?? user.email,
+    phone_number: updateData.phone_number ?? user.phone_number,
+    address: updateData.address ?? user.address,
+    city: updateData.city ?? user.city,
+    state: updateData.state ?? user.state,
+  });
+
+  // 3️⃣ Check if TravellerProfile exists
+  const travellerProfile = await TravellerProfile.findOne({
+    where: { user_id: userId },
+  });
+
+  if (travellerProfile) {
+    await travellerProfile.update({
+      name: updateData.name ?? travellerProfile.name,
+      email: updateData.email ?? travellerProfile.email,
+      phone_number:
+        updateData.phone_number ?? travellerProfile.phone_number,
+      vehicle_type:
+        updateData.vehicle_type ?? travellerProfile.vehicle_type,
+      capacity_kg:
+        updateData.capacity_kg ?? travellerProfile.capacity_kg,
+      status: updateData.status ?? travellerProfile.status,
+    });
+  }
+
+  return {
+    user,
+    travellerProfile: travellerProfile || null,
+  };
+}
+
+
 
 
 /**

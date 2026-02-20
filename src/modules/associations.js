@@ -32,6 +32,8 @@ import ParcelTracking from "../modules/tracking/parcelTracking.model.js";
 /* ADDRESS */
 import Address from "./parcel/address.model.js";
 
+// Route
+import TravellerRoute from "./traveller/travellerRoute.model.js";
 
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
@@ -60,7 +62,7 @@ UserProfile.belongsTo(User, { foreignKey: "user_id" });
    USER ↔ TRAVELLER PROFILE (1–1)
    =========================== */
 User.hasOne(TravellerProfile, { foreignKey: "user_id", onDelete: "CASCADE", as: "travellerProfile" });
-TravellerProfile.belongsTo(User, { foreignKey: "user_id" });
+TravellerProfile.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
 /* ===========================
    TRAVELLER PROFILE ↔ AADHAAR (1–1)
@@ -301,3 +303,15 @@ export {
   ParcelTracking, 
   Address 
 };
+
+
+// Add associations
+TravellerProfile.hasMany(TravellerRoute, {
+  foreignKey: "traveller_profile_id",
+  as: "routes"
+});
+
+TravellerRoute.belongsTo(TravellerProfile, {
+  foreignKey: "traveller_profile_id",
+  as: "travellerProfile"
+});
