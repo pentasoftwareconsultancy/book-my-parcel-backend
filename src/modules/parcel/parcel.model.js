@@ -6,7 +6,7 @@ const Parcel = sequelize.define(
   "parcel",
   {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-    user_id: { type: DataTypes.UUID, allowNull: false },
+    user_profile_id: { type: DataTypes.UUID, allowNull: false },
     package_size: { type: DataTypes.ENUM("small","medium","large","extra_large"), allowNull: false },
     delivery_speed: { type: DataTypes.ENUM("standard","express","same_day"), allowNull: false },
     weight: { type: DataTypes.FLOAT, allowNull: false },
@@ -38,5 +38,11 @@ const Parcel = sequelize.define(
   { freezeTableName: true, timestamps: true }
 );
 
+// Define associations
+Parcel.associate = function(models) {
+  Parcel.hasOne(models.Booking, { foreignKey: 'parcel_id', as: 'booking' });
+  Parcel.belongsTo(models.Address, { foreignKey: 'pickup_address_id', as: 'pickupAddress' });
+  Parcel.belongsTo(models.Address, { foreignKey: 'delivery_address_id', as: 'deliveryAddress' });
+};
 
 export default Parcel;

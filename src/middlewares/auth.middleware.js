@@ -1,5 +1,4 @@
-
- import jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import User from "../modules/user/user.model.js"; // adjust path
 
 export async function authMiddleware(req, res, next) {

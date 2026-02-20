@@ -7,7 +7,7 @@ import UserRole from "./user/userRole.model.js";
 import UserProfile from "../modules/user/userProfile.model.js";
 
 /* TRAVELLER */
-import TravellerProfile from "../modules/traveller/traveller.model.js";
+import TravellerProfile from "./traveller/travellerProfile.model.js";
 import TravellerTrip from "../modules/traveller/travellerTrip.model.js";
 import AadhaarVerification from "../modules/traveller/aadhaarVerification.model.js";
 import TravellerKYC from "./traveller/travellerKYC.model.js";
@@ -53,13 +53,13 @@ Role.belongsToMany(User, {
 /* ===========================
    USER ↔ USER PROFILE (1–1)
    =========================== */
-User.hasOne(UserProfile, { foreignKey: "user_id", onDelete: "CASCADE" });
+User.hasOne(UserProfile, { foreignKey: "user_id", onDelete: "CASCADE" , as:"profile" });
 UserProfile.belongsTo(User, { foreignKey: "user_id" });
 
 /* ===========================
    USER ↔ TRAVELLER PROFILE (1–1)
    =========================== */
-User.hasOne(TravellerProfile, { foreignKey: "user_id", onDelete: "CASCADE" });
+User.hasOne(TravellerProfile, { foreignKey: "user_id", onDelete: "CASCADE", as: "travellerProfile" });
 TravellerProfile.belongsTo(User, { foreignKey: "user_id" });
 
 /* ===========================
@@ -87,8 +87,8 @@ TravellerTrip.belongsTo(TravellerProfile, {
 /* ===========================
    USER ↔ PARCEL (1–N)
    =========================== */
-User.hasMany(Parcel, { foreignKey: "user_id", onDelete: "CASCADE" });
-Parcel.belongsTo(User, { foreignKey: "user_id" });
+User.hasMany(Parcel, { foreignKey: "user_profile_id", onDelete: "CASCADE" });
+Parcel.belongsTo(User, { foreignKey: "user_profile_id" });
 
 /* ===========================
    PARCEL ↔ BOOKING (1–1)
@@ -207,8 +207,8 @@ TravellerKYC.belongsTo(User, {
    PARCEL ↔ ADDRESS (PICKUP & DELIVERY)
    =========================== */
 
-Parcel.belongsTo(Address, { as: "pickup_address", foreignKey: "pickup_address_id" ,as:"pickupAddress" });
-Parcel.belongsTo(Address, { as: "delivery_address", foreignKey: "delivery_address_id",as:"deliveryAddress" });
+Parcel.belongsTo(Address, { as: "pickupAddress", foreignKey: "pickup_address_id" });
+Parcel.belongsTo(Address, { as: "deliveryAddress", foreignKey: "delivery_address_id" });
 
 
 
@@ -279,6 +279,23 @@ Parcel.belongsTo(Address, { as: "delivery_address", foreignKey: "delivery_addres
 
 
 
-export default function applyAssociations() {
-  return true;
-}
+export { 
+  User, 
+  Role, 
+  UserRole, 
+  UserProfile, 
+  TravellerProfile, 
+  TravellerTrip, 
+  AadhaarVerification, 
+  TravellerKYC, 
+  Parcel, 
+  ParcelProof, 
+  Booking, 
+  BookingStatusLog, 
+  Payment, 
+  Wallet, 
+  WalletTransaction, 
+  Refund, 
+  ParcelTracking, 
+  Address 
+};
