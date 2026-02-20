@@ -1,5 +1,6 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
+import User from "../user/user.model.js";
 
 const TravellerProfile = sequelize.define(
   "traveller_profiles",
@@ -9,12 +10,20 @@ const TravellerProfile = sequelize.define(
       primaryKey: true,
       defaultValue: DataTypes.UUIDV4,
     },
-    user_id: DataTypes.UUID,
+    user_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: User,
+        key: "id",
+      },
+      onDelete: "CASCADE",
+    },
     vehicle_type: DataTypes.STRING,
     capacity_kg: DataTypes.INTEGER,
     status: DataTypes.STRING,
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 export default TravellerProfile;
