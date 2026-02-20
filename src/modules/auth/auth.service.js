@@ -20,6 +20,16 @@ export async function signup(userData, selectedRole) {
   const hashedPassword = await bcrypt.hash(userData.password, 10);
 
   return await sequelize.transaction(async (t) => {
+
+    // ✅ 0️⃣ CHECK IF EMAIL ALREADY EXISTS
+    const existingUser = await User.findOne({
+      where: { email: userData.email },
+      transaction: t
+    });
+
+    if (existingUser) {
+      throw new Error("Email already exists");
+    }
     // 1️⃣ Create user
     const { name, phone_number, alternate_phone, email, address, city, state } = userData;
 
@@ -44,10 +54,12 @@ export async function signup(userData, selectedRole) {
     if (selectedRole === ROLES.TRAVELLER) {
       // Create TravellerProfile
       travellerProfile = await TravellerProfile.create(
-        { user_id: user.id, 
-          vehicle_type: null, 
-          capacity_kg: null, 
-          status: "PENDING" },
+        {
+          user_id: user.id,
+          vehicle_type: null,
+          capacity_kg: null,
+          status: "PENDING"
+        },
         { transaction: t }
       );
       console.log("TravellerProfile created for user:", travellerProfile.user_id);

@@ -87,8 +87,8 @@ TravellerTrip.belongsTo(TravellerProfile, {
 /* ===========================
    USER ↔ PARCEL (1–N)
    =========================== */
-User.hasMany(Parcel, { foreignKey: "user_profile_id", onDelete: "CASCADE" });
-Parcel.belongsTo(User, { foreignKey: "user_profile_id" });
+User.hasMany(Parcel, { foreignKey: "user_id", onDelete: "CASCADE" });
+Parcel.belongsTo(User, { foreignKey: "user_id" });
 
 /* ===========================
    PARCEL ↔ BOOKING (1–1)
@@ -98,7 +98,8 @@ Parcel.hasOne(Booking, {
   onDelete: "CASCADE"
 });
 Booking.belongsTo(Parcel, {
-  foreignKey: "parcel_id"
+  foreignKey: "parcel_id",
+  as:"parcel"
 });
 
 /* ===========================
@@ -110,6 +111,7 @@ TravellerTrip.hasMany(Booking, {
 });
 Booking.belongsTo(TravellerTrip, {
   foreignKey: "trip_id",
+  as:"traveller_trip"
 });
 
 /* ===========================
