@@ -19,6 +19,20 @@ const TravellerProfile = sequelize.define(
       },
       onDelete: "CASCADE",
     },
+
+
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    phone_number: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
     vehicle_type: DataTypes.STRING,
     capacity_kg: DataTypes.INTEGER,
     status: DataTypes.STRING,
