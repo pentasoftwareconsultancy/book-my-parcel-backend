@@ -31,7 +31,7 @@ const Parcel = sequelize.define(
     "DELIVERED",
     "CANCELLED"
   ),
-  defaultValue: "CREATED"
+  defaultValue: "CREATED" 
 }
 
   },
