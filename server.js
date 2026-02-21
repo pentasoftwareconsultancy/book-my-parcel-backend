@@ -14,7 +14,7 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("Application Connected to Database");
 
-    await sequelize.sync({ force: false });
+    await sequelize.sync({ force:  true });
     console.log("Tables Created with Relations");
 
     //STEP 4: Seed static roles

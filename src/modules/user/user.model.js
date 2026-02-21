@@ -9,6 +9,8 @@ const User = sequelize.define(
       primaryKey: true,
       defaultValue: DataTypes.UUIDV4,
     },
+
+    
     name: DataTypes.STRING,
     phone_number: DataTypes.STRING,
     alternate_phone: DataTypes.STRING,

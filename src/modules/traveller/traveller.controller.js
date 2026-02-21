@@ -6,6 +6,7 @@ import Address from "../parcel/address.model.js";
 import User from "../user/user.model.js";
 import TravellerTrip from "./travellerTrip.model.js";
 import sequelize from "../../config/database.config.js";
+import UserProfile from "../user/userProfile.model.js";
 
 /* SUBMIT KYC */
 export const submitKYC = async (req, res, next) => {
@@ -69,29 +70,79 @@ export const updateKYCStatus = async (req, res, next) => {
 /*
  GET NEARBY TRAVELERS
  */
-export const getNearbyTravelers = async (req, res, next) => {
-  try {
-    const { pickupCity, deliveryCity, page, limit, vehicleType } = req.query;
+// export const getNearbyTravelers = async (req, res, next) => {
+//   try {
+//     const { pickupCity, deliveryCity, page, limit, vehicleType } = req.query;
     
-    const result = await travellerService.getNearbyTravelers(
-      pickupCity,
-      deliveryCity,
-      {
-        page: page ? parseInt(page) : 1,
-        limit: limit ? parseInt(limit) : 10,
-        vehicleType: vehicleType || null
-      }
-    );
+//     const result = await travellerService.getNearbyTravelers(
+//       pickupCity,
+//       deliveryCity,
+//       {
+//         page: page ? parseInt(page) : 1,
+//         limit: limit ? parseInt(limit) : 10,
+//         vehicleType: vehicleType || null
+//       }
+//     );
 
-    res.status(200).json({
-      success: true,
-      message: "Nearby travelers fetched successfully",
-      ...result
-    });
+//     res.status(200).json({
+//       success: true,
+//       message: "Nearby travelers fetched successfully",
+//       ...result
+//     });
 
-  } catch (err) {
-    next(err);
+//   } catch (err) {
+//     next(err);
+//   }
+// };
+
+
+
+export const getNearbyTravelers = async (
+  pickupCity,
+  deliveryCity,
+  { page = 1, limit = 10, vehicleType = null }
+) => {
+
+  const offset = (page - 1) * limit;
+
+  const whereProfile = {};
+  if (pickupCity) {
+    whereProfile.city = pickupCity;
   }
+
+  const whereTrip = {};
+  if (vehicleType) {
+    whereTrip.vehicle_type = vehicleType;
+  }
+
+  const { count, rows } = await User.findAndCountAll({
+    include: [
+      {
+        model: UserProfile,
+        as: "profile",           // MUST match association
+        where: whereProfile,
+        required: true
+      },
+      {
+        model: TravellerTrip,
+        as: "traveller_trip",    // MUST match your alias
+        where: whereTrip,
+        required: false
+      }
+    ],
+    limit,
+    offset
+  });
+
+  return {
+    travelers: rows,
+    pagination: {
+      total: count,
+      page,
+      limit,
+      totalPages: Math.ceil(count / limit)
+    }
+  };
 };
 
 /**

@@ -3,7 +3,7 @@ import sequelize from "../../config/database.config.js";
 
 const Address = sequelize.define("address", {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  user_id: { type: DataTypes.UUID, allowNull: true },
+  user_profile_id: { type: DataTypes.UUID, allowNull: true },
   type: { type: DataTypes.ENUM("pickup","delivery"), allowNull: false },
   name: { type: DataTypes.STRING, allowNull: false },
   address: { type: DataTypes.STRING, allowNull: false },
@@ -19,7 +19,7 @@ const Address = sequelize.define("address", {
   timestamps: true,
   indexes: [
     { name: "idx_address_city", fields: ["city"] },
-    { name: "idx_address_user_id", fields: ["user_id"] },
+    { name: "idx_address_user_profile_id", fields: ["user_profile_id"] },
     { name: "idx_address_type", fields: ["type"] }
   ]
 });
