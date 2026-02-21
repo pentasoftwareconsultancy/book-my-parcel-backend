@@ -193,7 +193,16 @@ ParcelProof.belongsTo(Booking, {
 });
 
 
+// Add associations
+TravellerProfile.hasMany(TravellerRoute, {
+  foreignKey: "traveller_profile_id",
+  as: "routes"
+});
 
+TravellerRoute.belongsTo(TravellerProfile, {
+  foreignKey: "traveller_profile_id",
+  as: "travellerProfile"
+});
 // // travellerkyc
 
 User.hasOne(TravellerKYC, {
@@ -305,13 +314,3 @@ export {
 };
 
 
-// Add associations
-TravellerProfile.hasMany(TravellerRoute, {
-  foreignKey: "traveller_profile_id",
-  as: "routes"
-});
-
-TravellerRoute.belongsTo(TravellerProfile, {
-  foreignKey: "traveller_profile_id",
-  as: "travellerProfile"
-});
