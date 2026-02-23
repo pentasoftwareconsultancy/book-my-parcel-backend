@@ -8,7 +8,7 @@ const app = express();
 /* ✅ CORS configuration */
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://book-my-parcel-frontend.vercel.app"
+  "https://book-my-parcel-frontend.vercel.app/api"
 ];
 
 app.use(
