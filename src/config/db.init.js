@@ -3,11 +3,16 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, NODE_ENV } =
-  process.env;
+const {
+  DB_HOST,
+  DB_PORT,
+  DB_USER,
+  DB_PASSWORD,
+  DB_NAME,
+  DB_SSL,
+} = process.env;
 
 const initDatabase = async () => {
- 
   if (process.env.DATABASE_URL) {
     console.log("Skipping database creation (managed DB)");
     return;
@@ -18,13 +23,23 @@ const initDatabase = async () => {
     port: DB_PORT || 5432,
     dialect: "postgres",
     logging: false,
+
+    dialectOptions:
+      DB_SSL === "true"
+        ? {
+            ssl: {
+              require: true,
+              rejectUnauthorized: false, // needed for Render/Heroku
+            },
+          }
+        : {},
   });
 
   try {
     await sequelize.authenticate();
 
     const [result] = await sequelize.query(
-      `SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'`,
+      `SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'`
     );
 
     if (result.length === 0) {
