@@ -10,7 +10,7 @@ import { generateToken } from "../../utils/jwt.util.js";
 import UserProfile from "../user/userProfile.model.js";
 import TravellerProfile from "../traveller/travellerProfile.model.js";
 import { validateSignupData , validateEmail, validatePhone, checkDuplicateEmail , checkDuplicatePhone } from "../../utils/validation.util.js";
-import { validateSignupData } from "../../utils/validation.util.js";
+
 import { Console } from "console";
 import { chownSync } from "fs";
 
