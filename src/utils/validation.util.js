@@ -1,4 +1,6 @@
-
+import User from "../modules/user/user.model.js";
+import TravellerProfile from "../modules/traveller/travellerProfile.model.js";
+import { Op } from "sequelize";
 
 // ==========================================
 //         SIGNUP VALIDATION
@@ -132,4 +134,71 @@ export const validateStatus = (req, res, next) => {
         return res.status(400).json({ error: "Rejection reason is required when status is REJECTED" });
 
     next();
+};
+
+
+
+
+
+
+//   travell profile   validation 
+
+
+
+// ✅ Email Format Validation
+export const validateEmail = (email) => {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!regex.test(email)) {
+    throw new Error("Invalid email format");
+  }
+};
+
+// ✅ Indian Phone Validation (10 digits)
+export const validatePhone = (phone) => {
+  const regex = /^[6-9]\d{9}$/;
+  if (!regex.test(phone)) {
+    throw new Error("Invalid phone number");
+  }
+};
+
+// ✅ Check Duplicate Email in BOTH tables
+export const checkDuplicateEmail = async (email, userId = null) => {
+  const userExists = await User.findOne({
+    where: {
+      email,
+      ...(userId && { id: { [Op.ne]: userId } }),
+    },
+  });
+
+  const travellerExists = await TravellerProfile.findOne({
+    where: {
+      email,
+      ...(userId && { user_id: { [Op.ne]: userId } }),
+    },
+  });
+
+  if (userExists || travellerExists) {
+    throw new Error("Email already exists");
+  }
+};
+
+// ✅ Check Duplicate Phone in BOTH tables
+export const checkDuplicatePhone = async (phone, userId = null) => {
+  const userExists = await User.findOne({
+    where: {
+      phone_number: phone,
+      ...(userId && { id: { [Op.ne]: userId } }),
+    },
+  });
+
+  const travellerExists = await TravellerProfile.findOne({
+    where: {
+      phone_number: phone,
+      ...(userId && { user_id: { [Op.ne]: userId } }),
+    },
+  });
+
+  if (userExists || travellerExists) {
+    throw new Error("Phone number already exists");
+  }
 };

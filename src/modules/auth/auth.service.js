@@ -9,7 +9,7 @@ import { ROLES, KYC_STATUS } from "../../middlewares/role.middleware.js";
 import { generateToken } from "../../utils/jwt.util.js";
 import UserProfile from "../user/userProfile.model.js";
 import TravellerProfile from "../traveller/travellerProfile.model.js";
-import { validateSignupData } from "../../utils/validation.util.js";
+import { validateSignupData , validateEmail, validatePhone, checkDuplicateEmail , checkDuplicatePhone } from "../../utils/validation.util.js";
 
 // Export generateToken for use in controllers
 export { generateToken };
@@ -166,15 +166,31 @@ export async function signup(userData, selectedRole) {
  * UPDATE PROFILE 
  */
 
+
+
 export async function updateProfile(userId, updateData) {
-  // 1️⃣ Find user
   const user = await User.findByPk(userId);
 
   if (!user) {
     throw new Error("User not found");
   }
 
-  // 2️⃣ Update USER table
+  // 🔥 EMAIL VALIDATION
+  if (updateData.email && updateData.email !== user.email) {
+    validateEmail(updateData.email);
+    await checkDuplicateEmail(updateData.email, userId);
+  }
+
+  // 🔥 PHONE VALIDATION
+  if (
+    updateData.phone_number &&
+    updateData.phone_number !== user.phone_number
+  ) {
+    validatePhone(updateData.phone_number);
+    await checkDuplicatePhone(updateData.phone_number, userId);
+  }
+
+  // ✅ Update USER table
   await user.update({
     name: updateData.name ?? user.name,
     email: updateData.email ?? user.email,
@@ -184,7 +200,7 @@ export async function updateProfile(userId, updateData) {
     state: updateData.state ?? user.state,
   });
 
-  // 3️⃣ Check if TravellerProfile exists
+  // ✅ Update TravellerProfile
   const travellerProfile = await TravellerProfile.findOne({
     where: { user_id: userId },
   });
@@ -208,6 +224,16 @@ export async function updateProfile(userId, updateData) {
     travellerProfile: travellerProfile || null,
   };
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
