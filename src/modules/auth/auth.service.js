@@ -10,9 +10,6 @@ import { generateToken } from "../../utils/jwt.util.js";
 import UserProfile from "../user/userProfile.model.js";
 import TravellerProfile from "../traveller/travellerProfile.model.js";
 import { validateSignupData , validateEmail, validatePhone, checkDuplicateEmail , checkDuplicatePhone } from "../../utils/validation.util.js";
-import { validateSignupData } from "../../utils/validation.util.js";
-import { Console } from "console";
-import { chownSync } from "fs";
 
 
 // Export generateToken for use in controllers
@@ -230,18 +227,6 @@ export async function updateProfile(userId, updateData) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 /**
  * LOGIN
  */
@@ -255,7 +240,7 @@ export async function login(email, password, loginRole) {
     include: [
       { model: UserProfile, as: "profile" },
       { model: TravellerProfile, as: "travellerProfile" },
-      { model: Role, through: { attributes: [] } },
+      { model: Role, as:"roles", through: { attributes: [] } },
       { model: TravellerKYC, as: "travellerKYC" }
     ],
   });
@@ -266,7 +251,7 @@ export async function login(email, password, loginRole) {
   if (!match) throw new Error("Invalid password");
 
   // 🔥 Get existing roles properly
-  let roles = user.Roles?.map(r => r.name) || [];
+  let roles = [loginRole]; // Start with the role user is trying to log in as
 
   // ✅ If user selects TRAVELLER during login
   if (
