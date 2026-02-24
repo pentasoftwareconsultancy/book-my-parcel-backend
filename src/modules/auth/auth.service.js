@@ -10,6 +10,8 @@ import { generateToken } from "../../utils/jwt.util.js";
 import UserProfile from "../user/userProfile.model.js";
 import TravellerProfile from "../traveller/travellerProfile.model.js";
 import { validateSignupData , validateEmail, validatePhone, checkDuplicateEmail , checkDuplicatePhone } from "../../utils/validation.util.js";
+import { validateSignupData } from "../../utils/validation.util.js";
+
 
 // Export generateToken for use in controllers
 export { generateToken };
@@ -275,16 +277,18 @@ export async function login(email, password, loginRole) {
     const travellerRole = await Role.findOne({
       where: { name: ROLES.TRAVELLER }
     });
+    console.log("Traveller role fetched:", travellerRole ? travellerRole.id : "not found");
 
     if (!travellerRole) {
       throw new Error("Traveller role not found");
     }
+    console.log("Assigning Traveller role to user:", user.id);
 
     // 2️⃣ Add to UserRole table
-    await UserRole.create({
-      user_id: user.id,
-      role_id: travellerRole.id
-    });
+    // await UserRole.create({
+    //   user_id: user.id,
+    //   role_id: travellerRole.id
+    // });
 
     // 3️⃣ Create TravellerProfile if not exists
     if (!user.travellerProfile) {
@@ -296,6 +300,7 @@ export async function login(email, password, loginRole) {
         status: "PENDING"
       });
     }
+    console.log("TravellerProfile ensured for user:", user.id);
 
     // 4️⃣ Create KYC if not exists
     if (!user.travellerKYC) {
@@ -304,9 +309,12 @@ export async function login(email, password, loginRole) {
         status: KYC_STATUS.NOT_STARTED
       });
     }
+    console.log("Traveller KYC ensured for user:", user.id);
 
     roles.push(ROLES.TRAVELLER);
+    console.log("User upgraded to Traveller role:", user.id);
   }
+
 
   // 🔐 Generate token (role not included)
   const token = generateToken({ userId: user.id });
