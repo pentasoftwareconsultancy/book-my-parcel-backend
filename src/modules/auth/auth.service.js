@@ -12,6 +12,8 @@ import TravellerProfile from "../traveller/travellerProfile.model.js";
 import { validateSignupData , validateEmail, validatePhone, checkDuplicateEmail , checkDuplicatePhone } from "../../utils/validation.util.js";
 
 
+
+
 // Export generateToken for use in controllers
 export { generateToken };
 
