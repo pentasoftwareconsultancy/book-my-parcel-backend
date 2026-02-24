@@ -1,7 +1,7 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { fetchAllUsers, fetchAllBookings, fetchTravelersForKYC, updateKYCStatus } from "./admin.controller.js";
-import { validateStatus } from "../../middlewares/validation.middleware.js";
+import { validateStatus } from "../../utils/validation.util.js";
 
 const router = express.Router();
 

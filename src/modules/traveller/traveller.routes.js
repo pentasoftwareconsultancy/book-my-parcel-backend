@@ -38,15 +38,41 @@ router.post(
   ctrl.submitKYC
 );
 
+//Get only my KYC details
 router.get("/kyc", authMiddleware, ctrl.getMyKYC);
 
-// update 
+
+//Get all KYC records (admin only )
+router.get(
+  "/kyc/all",
+  authMiddleware,
+  // optional: adminMiddleware
+  ctrl.getAllKYCs
+);
+
+// Update kyc status by admin
 
 router.patch(
   "/kyc/status/:id",
   authMiddleware,
   validateStatus, 
   ctrl.updateKYCStatus
+);
+
+// Full update of KYC by traveller (resubmission)
+router.put(
+  "/kyc/update",
+  authMiddleware,
+  upload.fields([
+    { name: "aadharFront", maxCount: 1 },
+    { name: "aadharBack", maxCount: 1 },
+    { name: "panFront", maxCount: 1 },
+    { name: "panBack", maxCount: 1 },
+    { name: "drivingPhoto", maxCount: 1 },
+    { name: "selfie", maxCount: 1 },
+  ]),
+  validateKYC,
+  ctrl.updateTravellerKYC
 );
 
 // Get nearby travelers
