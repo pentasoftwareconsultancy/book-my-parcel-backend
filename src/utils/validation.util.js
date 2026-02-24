@@ -133,3 +133,290 @@ export const validateStatus = (req, res, next) => {
 
     next();
 };
+
+
+// ==========================================
+//         ADD ROUTE VALIDATION (ALL 3 FORMS)
+// ==========================================
+
+export const validateAddRoute = (req, res, next) => {
+    const {
+        // Form 1: Route Details
+        originCity,
+        originState,
+        destinationCity,
+        destinationState,
+        departureDate,
+        departureTime,
+        arrivalDate,
+        arrivalTime,
+        isRecurring,
+        recurringDays,
+        stops,
+        
+        // Form 2: Vehicle & Capacity
+        vehicleType,
+        vehicleNumber,
+        maxWeightKg,
+        availableSpaceDescription,
+        
+        // Form 3: Parcel Preferences
+        acceptedParcelTypes,
+        minEarningPerDelivery
+    } = req.body;
+
+    const errors = [];
+
+    // ========== FORM 1: ROUTE DETAILS ==========
+    
+    if (!originCity || !originCity.trim()) 
+        errors.push("Origin city is required");
+    if (!originState || !originState.trim()) 
+        errors.push("Origin state is required");
+    if (!destinationCity || !destinationCity.trim()) 
+        errors.push("Destination city is required");
+    if (!destinationState || !destinationState.trim()) 
+        errors.push("Destination state is required");
+
+    if (!departureDate) {
+        errors.push("Departure date is required");
+    } else {
+        const depDate = new Date(departureDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (isNaN(depDate.getTime())) {
+            errors.push("Invalid departure date format");
+        } else if (depDate < today) {
+            errors.push("Departure date cannot be in the past");
+        }
+    }
+
+    if (!departureTime || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(departureTime)) 
+        errors.push("Valid departure time is required (HH:MM format)");
+
+    if (!arrivalDate) {
+        errors.push("Arrival date is required");
+    } else {
+        const arrDate = new Date(arrivalDate);
+        const depDate = new Date(departureDate);
+        
+        if (isNaN(arrDate.getTime())) {
+            errors.push("Invalid arrival date format");
+        } else if (arrDate < depDate) {
+            errors.push("Arrival date cannot be before departure date");
+        }
+    }
+
+    if (!arrivalTime || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(arrivalTime)) 
+        errors.push("Valid arrival time is required (HH:MM format)");
+
+    if (isRecurring === true) {
+        if (!recurringDays || !Array.isArray(recurringDays) || recurringDays.length === 0) {
+            errors.push("Recurring days are required when route is recurring");
+        } else {
+            const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+            const invalidDays = recurringDays.filter(day => !validDays.includes(day));
+            if (invalidDays.length > 0) 
+                errors.push(`Invalid recurring days: ${invalidDays.join(", ")}`);
+        }
+    }
+
+    if (stops && !Array.isArray(stops)) {
+        errors.push("Stops must be an array");
+    }
+
+    // ========== FORM 2: VEHICLE & CAPACITY ==========
+    
+    const validVehicleTypes = ["Bike/Scooter", "Car", "SUV", "Bus", "Train", "Van", "Mini Truck", "Metro", "Aeroplane"];
+    if (!vehicleType || !validVehicleTypes.includes(vehicleType)) 
+        errors.push(`Vehicle type is required (${validVehicleTypes.join(", ")})`);
+
+    if (vehicleNumber && vehicleNumber.trim() && !/^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{4}$/.test(vehicleNumber.replace(/\s/g, ''))) {
+        errors.push("Invalid vehicle number format (e.g., MH12AB1234)");
+    }
+
+    if (maxWeightKg !== undefined && maxWeightKg !== null && maxWeightKg !== "") {
+        const weight = Number(maxWeightKg);
+        if (isNaN(weight) || weight <= 0) 
+            errors.push("Max weight must be a positive number");
+        if (weight > 1000) 
+            errors.push("Max weight cannot exceed 1000 kg");
+    }
+
+    if (availableSpaceDescription && availableSpaceDescription.length > 500) {
+        errors.push("Available space description cannot exceed 500 characters");
+    }
+
+    // ========== FORM 3: PARCEL PREFERENCES ==========
+    
+    if (acceptedParcelTypes && Array.isArray(acceptedParcelTypes) && acceptedParcelTypes.length > 0) {
+        const validParcelTypes = ["Documents", "Electronics", "Clothes", "Food Items", "Medicines", "Others"];
+        const invalidTypes = acceptedParcelTypes.filter(type => !validParcelTypes.includes(type));
+        if (invalidTypes.length > 0) 
+            errors.push(`Invalid parcel types: ${invalidTypes.join(", ")}`);
+    }
+
+    if (minEarningPerDelivery !== undefined && minEarningPerDelivery !== null && minEarningPerDelivery !== "") {
+        const earning = Number(minEarningPerDelivery);
+        if (isNaN(earning) || earning < 0) 
+            errors.push("Minimum earning must be a non-negative number");
+        if (earning > 100000) 
+            errors.push("Minimum earning cannot exceed ₹100,000");
+    }
+
+    if (errors.length > 0)
+        return res.status(400).json({ success: false, errors });
+
+    next();
+};
+
+
+// ==========================================
+//         UPDATE ROUTE VALIDATION
+// ==========================================
+
+export const validateUpdateRoute = (req, res, next) => {
+    const {
+        // Form 1: Route Details
+        originCity,
+        originState,
+        destinationCity,
+        destinationState,
+        departureDate,
+        departureTime,
+        arrivalDate,
+        arrivalTime,
+        isRecurring,
+        recurringDays,
+        stops,
+        
+        // Form 2: Vehicle & Capacity
+        vehicleType,
+        vehicleNumber,
+        maxWeightKg,
+        availableSpaceDescription,
+        
+        // Form 3: Parcel Preferences
+        acceptedParcelTypes,
+        minEarningPerDelivery,
+        
+        // Status
+        status
+    } = req.body;
+
+    const errors = [];
+
+    // ========== FORM 1: ROUTE DETAILS (if provided) ==========
+    
+    if (originCity !== undefined && (!originCity || !originCity.trim())) 
+        errors.push("Origin city cannot be empty");
+    if (originState !== undefined && (!originState || !originState.trim())) 
+        errors.push("Origin state cannot be empty");
+    if (destinationCity !== undefined && (!destinationCity || !destinationCity.trim())) 
+        errors.push("Destination city cannot be empty");
+    if (destinationState !== undefined && (!destinationState || !destinationState.trim())) 
+        errors.push("Destination state cannot be empty");
+
+    if (departureDate !== undefined) {
+        const depDate = new Date(departureDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (isNaN(depDate.getTime())) {
+            errors.push("Invalid departure date format");
+        } else if (depDate < today) {
+            errors.push("Departure date cannot be in the past");
+        }
+    }
+
+    if (departureTime !== undefined && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(departureTime)) 
+        errors.push("Valid departure time is required (HH:MM format)");
+
+    if (arrivalDate !== undefined) {
+        const arrDate = new Date(arrivalDate);
+        
+        if (isNaN(arrDate.getTime())) {
+            errors.push("Invalid arrival date format");
+        } else if (departureDate) {
+            const depDate = new Date(departureDate);
+            if (arrDate < depDate) {
+                errors.push("Arrival date cannot be before departure date");
+            }
+        }
+    }
+
+    if (arrivalTime !== undefined && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(arrivalTime)) 
+        errors.push("Valid arrival time is required (HH:MM format)");
+
+    if (isRecurring === true) {
+        if (!recurringDays || !Array.isArray(recurringDays) || recurringDays.length === 0) {
+            errors.push("Recurring days are required when route is recurring");
+        } else {
+            const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+            const invalidDays = recurringDays.filter(day => !validDays.includes(day));
+            if (invalidDays.length > 0) 
+                errors.push(`Invalid recurring days: ${invalidDays.join(", ")}`);
+        }
+    }
+
+    if (stops !== undefined && !Array.isArray(stops)) {
+        errors.push("Stops must be an array");
+    }
+
+    // ========== FORM 2: VEHICLE & CAPACITY (if provided) ==========
+    
+    if (vehicleType !== undefined) {
+        const validVehicleTypes = ["Bike/Scooter", "Car", "SUV", "Bus", "Train", "Van", "Mini Truck", "Metro", "Aeroplane"];
+        if (!validVehicleTypes.includes(vehicleType)) 
+            errors.push(`Vehicle type must be one of: ${validVehicleTypes.join(", ")}`);
+    }
+
+    if (vehicleNumber !== undefined && vehicleNumber && vehicleNumber.trim() && !/^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{4}$/.test(vehicleNumber.replace(/\s/g, ''))) {
+        errors.push("Invalid vehicle number format (e.g., MH12AB1234)");
+    }
+
+    if (maxWeightKg !== undefined && maxWeightKg !== null && maxWeightKg !== "") {
+        const weight = Number(maxWeightKg);
+        if (isNaN(weight) || weight <= 0) 
+            errors.push("Max weight must be a positive number");
+        if (weight > 1000) 
+            errors.push("Max weight cannot exceed 1000 kg");
+    }
+
+    if (availableSpaceDescription !== undefined && availableSpaceDescription && availableSpaceDescription.length > 500) {
+        errors.push("Available space description cannot exceed 500 characters");
+    }
+
+    // ========== FORM 3: PARCEL PREFERENCES (if provided) ==========
+    
+    if (acceptedParcelTypes !== undefined) {
+        if (!Array.isArray(acceptedParcelTypes)) {
+            errors.push("Accepted parcel types must be an array");
+        } else if (acceptedParcelTypes.length > 0) {
+            const validParcelTypes = ["Documents", "Electronics", "Clothes", "Food Items", "Medicines", "Others"];
+            const invalidTypes = acceptedParcelTypes.filter(type => !validParcelTypes.includes(type));
+            if (invalidTypes.length > 0) 
+                errors.push(`Invalid parcel types: ${invalidTypes.join(", ")}`);
+        }
+    }
+
+    if (minEarningPerDelivery !== undefined && minEarningPerDelivery !== null && minEarningPerDelivery !== "") {
+        const earning = Number(minEarningPerDelivery);
+        if (isNaN(earning) || earning < 0) 
+            errors.push("Minimum earning must be a non-negative number");
+        if (earning > 100000) 
+            errors.push("Minimum earning cannot exceed ₹100,000");
+    }
+
+    if (status !== undefined) {
+        const validStatuses = ["ACTIVE", "INACTIVE", "COMPLETED"];
+        if (!validStatuses.includes(status)) 
+            errors.push(`Status must be one of: ${validStatuses.join(", ")}`);
+    }
+
+    if (errors.length > 0)
+        return res.status(400).json({ success: false, errors });
+
+    next();
+};
