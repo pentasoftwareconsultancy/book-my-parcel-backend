@@ -38,9 +38,16 @@ export const updateUserProfile = async (req, res) => {
  */
 export async function loginController(req, res) {
   try {
-    const { email, password } = req.body;
-    const result = await authService.login(email, password);
+    const { email, password, loginRole } = req.body;
+
+    const result = await authService.login(
+      email,
+      password,
+      loginRole   // 👈 new parameter
+    );
+
     res.status(200).json(result);
+
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
