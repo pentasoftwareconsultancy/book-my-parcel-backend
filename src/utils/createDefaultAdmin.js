@@ -15,7 +15,7 @@ export const createDefaultAdmin = async () => {
     return;
   }
 
-  const hashedPassword = await bcrypt.hash("admin123", 10);
+  const hashedPassword = await bcrypt.hash("Admin@123", 10);
 
   const adminUser = await User.create({
     name: "Super Admin",
