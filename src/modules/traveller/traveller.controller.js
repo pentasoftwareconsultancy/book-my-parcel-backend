@@ -46,6 +46,44 @@ export const getMyKYC = async (req, res, next) => {
   }
 };
 
+/* UPDATE FULL KYC (Traveller) */
+export const updateTravellerKYC = async (req, res, next) => {
+  try {
+
+    const data = await travellerService.updateTravellerKYC(
+      req.user.id,
+      req.body,
+      req.files
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "KYC Updated Successfully",
+      data
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+/* GET ALL KYC - ADMIN */
+export const getAllKYCs = async (req, res, next) => {
+  try {
+
+    const data = await travellerService.getAllKYCs();
+
+    res.status(200).json({
+      success: true,
+      count: data.length,
+      data
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
 
 // update 
 
