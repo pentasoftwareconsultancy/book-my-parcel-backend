@@ -10,13 +10,11 @@ const User = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
     },
 
-    
     name: DataTypes.STRING,
     phone_number: DataTypes.STRING,
     alternate_phone: DataTypes.STRING,
     email: DataTypes.STRING,
     password: DataTypes.STRING,
-    
   },
   {
     timestamps: true,
