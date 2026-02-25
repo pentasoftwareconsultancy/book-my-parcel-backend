@@ -160,73 +160,6 @@ export async function signup(userData, selectedRole) {
 }
 
 
-
-
-
-/**
- * UPDATE PROFILE 
- */
-
-
-
-export async function updateProfile(userId, updateData) {
-  const user = await User.findByPk(userId);
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  // 🔥 EMAIL VALIDATION
-  if (updateData.email && updateData.email !== user.email) {
-    validateEmail(updateData.email);
-    await checkDuplicateEmail(updateData.email, userId);
-  }
-
-  // 🔥 PHONE VALIDATION
-  if (
-    updateData.phone_number &&
-    updateData.phone_number !== user.phone_number
-  ) {
-    validatePhone(updateData.phone_number);
-    await checkDuplicatePhone(updateData.phone_number, userId);
-  }
-
-  // ✅ Update USER table
-  await user.update({
-    name: updateData.name ?? user.name,
-    email: updateData.email ?? user.email,
-    phone_number: updateData.phone_number ?? user.phone_number,
-    address: updateData.address ?? user.address,
-    city: updateData.city ?? user.city,
-    state: updateData.state ?? user.state,
-  });
-
-  // ✅ Update TravellerProfile
-  const travellerProfile = await TravellerProfile.findOne({
-    where: { user_id: userId },
-  });
-
-  if (travellerProfile) {
-    await travellerProfile.update({
-      name: updateData.name ?? travellerProfile.name,
-      email: updateData.email ?? travellerProfile.email,
-      phone_number:
-        updateData.phone_number ?? travellerProfile.phone_number,
-      vehicle_type:
-        updateData.vehicle_type ?? travellerProfile.vehicle_type,
-      capacity_kg:
-        updateData.capacity_kg ?? travellerProfile.capacity_kg,
-      status: updateData.status ?? travellerProfile.status,
-    });
-  }
-
-  return {
-    user,
-    travellerProfile: travellerProfile || null,
-  };
-}
-
-
 /**
  * LOGIN
  */
@@ -311,6 +244,69 @@ export async function login(email, password, loginRole) {
 
   return { user, token, roles, kycStatus };
 }
+
+
+/**
+ * UPDATE PROFILE 
+ */
+
+export async function updateProfile(userId, updateData) {
+  const user = await User.findByPk(userId);
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // 🔥 EMAIL VALIDATION
+  if (updateData.email && updateData.email !== user.email) {
+    validateEmail(updateData.email);
+    await checkDuplicateEmail(updateData.email, userId);
+  }
+
+  // 🔥 PHONE VALIDATION
+  if (
+    updateData.phone_number &&
+    updateData.phone_number !== user.phone_number
+  ) {
+    validatePhone(updateData.phone_number);
+    await checkDuplicatePhone(updateData.phone_number, userId);
+  }
+
+  // ✅ Update USER table
+  await user.update({
+    name: updateData.name ?? user.name,
+    email: updateData.email ?? user.email,
+    phone_number: updateData.phone_number ?? user.phone_number,
+    address: updateData.address ?? user.address,
+    city: updateData.city ?? user.city,
+    state: updateData.state ?? user.state,
+  });
+
+  // ✅ Update TravellerProfile
+  const travellerProfile = await TravellerProfile.findOne({
+    where: { user_id: userId },
+  });
+
+  if (travellerProfile) {
+    await travellerProfile.update({
+      name: updateData.name ?? travellerProfile.name,
+      email: updateData.email ?? travellerProfile.email,
+      phone_number:
+        updateData.phone_number ?? travellerProfile.phone_number,
+      vehicle_type:
+        updateData.vehicle_type ?? travellerProfile.vehicle_type,
+      capacity_kg:
+        updateData.capacity_kg ?? travellerProfile.capacity_kg,
+      status: updateData.status ?? travellerProfile.status,
+    });
+  }
+
+  return {
+    user,
+    travellerProfile: travellerProfile || null,
+  };
+}
+
 
 /**
  * BECOME TRAVELLER
@@ -411,4 +407,27 @@ export async function becomeTraveller(userId) {
   });
 }
 
+/**
+GET USER PROFILE
+ */
+export async function getUserProfile(userId) {
+  const user = await User.findByPk(userId, {
+    include: [
+      { model: UserProfile, as: "profile" },
+      { model: TravellerProfile, as: "travellerProfile" },
+      { model: Role, as: "roles", through: { attributes: [] } },
+      { model: TravellerKYC, as: "travellerKYC" }
+    ],
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  return {
+    user,
+    roles: user.roles.map(r => r.name),
+    kycStatus: user.travellerKYC?.status || "NOT_STARTED"
+  };
+}
 

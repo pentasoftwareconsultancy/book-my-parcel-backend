@@ -6,7 +6,8 @@ import {
   requestOTPController,
   verifyOTPController,
   checkUserExistsController,
-  updateUserProfile
+  updateUserProfile,
+  getProfileController
 } from "./auth.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 
@@ -18,6 +19,10 @@ router.post("/login", loginController);
 router.post("/request-otp", requestOTPController);
 router.post("/verify-otp", verifyOTPController);
 router.post("/check-user-exists", checkUserExistsController);
+
+/*GET USER PROFILE*/
+router.get("/profile", authMiddleware, getProfileController);
+
 
 // Protected route
 router.post("/become-traveller", authMiddleware, becomeTravellerController);

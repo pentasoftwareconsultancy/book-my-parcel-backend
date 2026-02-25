@@ -81,6 +81,19 @@ export async function loginController(req, res) {
 }
 
 /**
+GET USER PROFILE
+ */
+
+export const getProfileController= async (req, res) => {
+  try {
+    const data = await authService.getUserProfile(req.user.userId);
+    return res.json(data);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * BECOME TRAVELLER CONTROLLER
  */
 export async function becomeTravellerController(req, res) {
