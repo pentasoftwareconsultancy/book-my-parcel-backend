@@ -1,4 +1,4 @@
-// services/auth.service.js
+
 import bcrypt from "bcrypt";
 import sequelize from "../../config/database.config.js";
 import User from "../user/user.model.js";
@@ -17,6 +17,7 @@ export { generateToken };
  * SIGNUP
  */
 export async function signup(userData, selectedRole) {
+  
   const hashedPassword = await bcrypt.hash(userData.password, 10);
 
   return await sequelize.transaction(async (t) => {
