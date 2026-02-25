@@ -47,6 +47,57 @@ export const getMyKYC = async (userId) => {
   });
 };
 
+/* GET ALL KYC (ADMIN) */
+export const getAllKYCs = async () => {
+  return await TravellerKYC.findAll({
+    order: [["createdAt", "DESC"]]
+  });
+};
+
+/* FULL UPDATE KYC (Traveller) */
+export const updateTravellerKYC = async (userId, body, files) => {
+
+  const existing = await TravellerKYC.findOne({
+    where: { user_id: userId }
+  });
+
+  if (!existing) {
+    throw new Error("KYC record not found");
+  }
+
+  if (existing.status === KYC_STATUS.APPROVED) {
+    throw new Error("Approved KYC cannot be modified");
+  }
+
+  const payload = {
+    ...body,
+    status: KYC_STATUS.PENDING
+  };
+
+  // Update all file fields (if provided)
+  if (files?.aadharFront)
+    payload.aadhar_front = files.aadharFront[0].path;
+
+  if (files?.aadharBack)
+    payload.aadhar_back = files.aadharBack[0].path;
+
+  if (files?.panFront)
+    payload.pan_front = files.panFront[0].path;
+
+  if (files?.panBack)
+    payload.pan_back = files.panBack[0].path;
+
+  if (files?.drivingPhoto)
+    payload.driving_photo = files.drivingPhoto[0].path;
+
+  if (files?.selfie)
+    payload.selfie = files.selfie[0].path;
+
+  await existing.update(payload);
+
+  return existing;
+};
+
 
 /* UPDATE STATUS (ADMIN ONLY — controller already checks role) */
 export const updateKYCStatus = async (kycId, status) => {

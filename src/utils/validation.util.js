@@ -202,3 +202,50 @@ export const checkDuplicatePhone = async (phone, userId = null) => {
     throw new Error("Phone number already exists");
   }
 };
+
+
+// ==========================================
+//         ROUTE VALIDATION
+// ==========================================
+
+export const validateRoute = (req, res, next) => {
+  const {
+    originCity,
+    originState,
+    destinationCity,
+    destinationState,
+    departureDate,
+    departureTime,
+    arrivalDate,
+    arrivalTime,
+    vehicleType,
+    acceptedParcelTypes
+  } = req.body;
+
+  const errors = [];
+
+  // Form 1: Route Details
+  if (!originCity?.trim()) errors.push("Origin city is required");
+  if (!originState?.trim()) errors.push("Origin state is required");
+  if (!destinationCity?.trim()) errors.push("Destination city is required");
+  if (!destinationState?.trim()) errors.push("Destination state is required");
+  
+  if (!departureDate) errors.push("Departure date is required");
+  if (!departureTime) errors.push("Departure time is required");
+  if (!arrivalDate) errors.push("Arrival date is required");
+  if (!arrivalTime) errors.push("Arrival time is required");
+
+  // Form 2: Vehicle & Capacity
+  if (!vehicleType?.trim()) errors.push("Vehicle type is required");
+
+  // Form 3: Parcel Preferences
+  if (!acceptedParcelTypes || acceptedParcelTypes.length === 0) {
+    errors.push("At least one parcel type must be selected");
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, errors });
+  }
+
+  next();
+};
