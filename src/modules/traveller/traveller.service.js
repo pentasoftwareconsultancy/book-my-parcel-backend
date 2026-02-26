@@ -8,6 +8,25 @@ export const submitKYC = async (userId, body, files) => {
 
   delete body.status; // prevent manual status override
 
+// Validate Aadhar
+if (body.aadhar_number) {
+  const cleaned = body.aadhar_number.replace(/\s/g, '');
+  if (!/^\d{12}$/.test(cleaned) && !cleaned.includes('X')) {
+    throw new Error("Invalid Aadhar number format. Must be 12 digits.");
+  }
+  body.aadhar_number = cleaned;
+}
+
+// Validate PAN
+if (body.pan_number) {
+  const cleaned = body.pan_number.replace(/\s/g, '').toUpperCase();
+  if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleaned) && !cleaned.includes('X')) {
+    throw new Error("Invalid PAN format. Must be like ABCDE1234F.");
+  }
+  body.pan_number = cleaned;
+}
+
+
   const payload = {
     user_id: userId,
     ...body,
@@ -38,6 +57,7 @@ export const submitKYC = async (userId, body, files) => {
 
   return await TravellerKYC.create(payload);
 };
+
 
 
 /* GET MY KYC */
