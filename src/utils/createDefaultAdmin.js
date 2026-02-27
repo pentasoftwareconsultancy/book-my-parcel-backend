@@ -7,7 +7,7 @@ import { ROLES } from "../middlewares/role.middleware.js";
 
 export const createDefaultAdmin = async () => {
   const existingAdmin = await User.findOne({
-    where: { email: "priti@gmail.com" }
+    where: { email: "priti.admin@gmail.com" }
   });
 
   if (existingAdmin) {
@@ -19,7 +19,7 @@ export const createDefaultAdmin = async () => {
 
   const adminUser = await User.create({
     name: "Super Admin",
-    email: "priti@gmail.com",
+    email: "priti.admin@gmail.com",
     password: hashedPassword,
     phone_number: "9999999999",
     city: "Pune",

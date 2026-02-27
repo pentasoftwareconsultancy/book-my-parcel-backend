@@ -86,7 +86,7 @@ GET USER PROFILE
 
 export const getProfileController= async (req, res) => {
   try {
-    const data = await authService.getUserProfile(req.user.userId);
+    const data = await authService.getUserProfile(req.user.id);
     return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: error.message });
