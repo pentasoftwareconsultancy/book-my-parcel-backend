@@ -1,4 +1,4 @@
-// services/auth.service.js
+
 import bcrypt from "bcrypt";
 import sequelize from "../../config/database.config.js";
 import User from "../user/user.model.js";
@@ -21,6 +21,7 @@ export { generateToken };
  * SIGNUP
  */
 export async function signup(userData, selectedRole) {
+  
 
   // 0️⃣ Validate input data
   validateSignupData(userData);
