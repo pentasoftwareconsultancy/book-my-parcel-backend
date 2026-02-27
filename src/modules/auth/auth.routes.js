@@ -15,6 +15,9 @@ const router = express.Router();
 // Public routes
 router.post("/signup", signupController);
 router.post("/login", loginController);
+
+
+
 router.post("/request-otp", requestOTPController);
 router.post("/verify-otp", verifyOTPController);
 router.post("/check-user-exists", checkUserExistsController);
