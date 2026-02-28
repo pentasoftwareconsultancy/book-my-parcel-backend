@@ -6,7 +6,8 @@ const Booking = sequelize.define("booking", {
   parcel_id: { type: DataTypes.UUID, allowNull: false },
   traveller_id: { type: DataTypes.UUID, allowNull: true }, // optional, assigned later
   status: { type: DataTypes.ENUM("CREATED","MATCHING","CONFIRMED","IN_TRANSIT","DELIVERED","CANCELLED"), defaultValue: "CREATED" },
-  assigned_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+  assigned_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  trip_id: { type: DataTypes.UUID, allowNull: true } //You Must Add This Otherwise route column will not work.
 }, {
   freezeTableName: true,
   timestamps: true
