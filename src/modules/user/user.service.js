@@ -16,8 +16,10 @@ export const getActiveTravellers = async () => {
             as: "user",
             attributes: ["id", "name", "phone_number"],
           },
+          console.log("Included TravellerProfile with User details"),
         ],
       },
+      console.log("Included TravellerRoute with status 'ACTIVE'"),
     ],
   });
 };

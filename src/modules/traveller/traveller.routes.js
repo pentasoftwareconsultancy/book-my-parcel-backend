@@ -5,7 +5,7 @@ import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import * as ctrl from "./traveller.controller.js";
 import { validateKYC, validateStatus, validateRoute } from "../../utils/validation.util.js";
 
-
+import * as trip from "./travellerTrip.controller.js";
 
 const router = express.Router();
 
@@ -88,5 +88,10 @@ router.get("/routes", authMiddleware, ctrl.getMyRoutes);
 router.get("/routes/:id", authMiddleware, ctrl.getRouteById);
 router.put("/routes/:id", authMiddleware, validateRoute, ctrl.updateRoute);
 router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
+
+// traveller trip
+router.post("/trip", trip.createTravellerTrip);
+router.get("/trip", trip.getAllTravellerTrips);
+router.get("/trip/:id", trip.getTravellerTripById);
 
 export default router;
