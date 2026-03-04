@@ -19,7 +19,7 @@ const Address = sequelize.define("address", {
   timestamps: true,
   indexes: [
     { name: "idx_address_city", fields: ["city"] },
-    { name: "idx_address_user_profile_id", fields: ["user_profile_id"] },
+    // { name: "idx_address_user_profile_id", fields: ["user_profile_id"] },
     { name: "idx_address_type", fields: ["type"] }
   ]
 });
