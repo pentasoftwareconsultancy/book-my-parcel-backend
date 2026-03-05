@@ -5,7 +5,7 @@ import Parcel from "../parcel/parcel.model.js";
 import Address from "../parcel/address.model.js";
 import User from "./user.model.js";
 import TravellerTrip from "../traveller/travellerTrip.model.js";
-import { getActiveTravellers } from "./user.service.js";
+import * as userService from "./user.service.js";
 
 export const getUserOrders = async (req, res, next) => {
   try {
@@ -236,11 +236,27 @@ export const getUserStats = async (req, res, next) => {
 };
 
 
-export const getActiveTravellersController = async (req, res) => {
+export const getProfileController = async (req, res) => {
   try {
-    const data = await getActiveTravellers();
-    res.status(200).json({ success: true, data });
+    console.log("Fetching profile for user ID:", req.user.id);
+    const userId = req.user.id;
+    console.log("User ID from token:", userId);
+    const data = await userService.getProfile(userId);
+    console.log("Profile data fetched:", data);
+    return res.status(200).json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+      console.error("Error fetching profile:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const updateUserProfileController = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const data = await userService.updateProfile(userId, req.body);
+    return res.status(200).json({ success: true, message: "Profile updated", data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

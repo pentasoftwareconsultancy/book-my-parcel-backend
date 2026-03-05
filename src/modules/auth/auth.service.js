@@ -92,6 +92,7 @@ export async function signup(userData, selectedRole) {
           full_name: name,
           address: address || null,
           city: city || null,
+          state: state || null,
           alternate_phone: alternate_phone || null
         },
         { transaction: t }
@@ -168,80 +169,6 @@ export async function signup(userData, selectedRole) {
 /**
  * LOGIN
  */
-// export async function login(email, password, loginRole) {
-
-//   console.log("Attempting login for email:", email);
-
-//   const user = await User.findOne({
-//     where: { email },
-//     attributes: { include: ["password"] },
-//     include: [
-//       { model: UserProfile, as: "profile" },
-//       { model: TravellerProfile, as: "travellerProfile" },
-//       { model: Role, as: "roles", through: { attributes: [] } },
-//       { model: TravellerKYC, as: "travellerKYC" }
-//     ],
-//   });
-
-//   if (!user) throw new Error("User not found");
-
-//   const match = await bcrypt.compare(password, user.password);
-//   if (!match) throw new Error("Invalid password");
-
-//   let roles = [loginRole]; // Start with the role user is trying to log in as
-
-//   // ✅ If user selects TRAVELLER during login
-//   if (
-//     loginRole === ROLES.TRAVELLER &&
-//     !roles.includes(ROLES.TRAVELLER)
-//   ) {
-//     console.log("Upgrading user to Traveller...");
-
-//     //  Get Traveller role
-//     const travellerRole = await Role.findOne({
-//       where: { name: ROLES.TRAVELLER }
-//     });
-//     console.log("Traveller role fetched:", travellerRole ? travellerRole.id : "not found");
-
-//     if (!travellerRole) {
-//       throw new Error("Traveller role not found");
-//     }
-//     console.log("Assigning Traveller role to user:", user.id);
-
-//     //  Create TravellerProfile if not exists
-//     if (!user.travellerProfile) {
-//       await TravellerProfile.create({
-//         user_id: user.id,
-//         name: user.name,
-//         email: user.email,
-//         phone_number: user.phone_number,
-//         status: "PENDING"
-//       });
-//     }
-//     console.log("TravellerProfile ensured for user:", user.id);
-
-//     // 4️⃣ Create KYC if not exists
-//     if (!user.travellerKYC) {
-//       await TravellerKYC.create({
-//         user_id: user.id,
-//         status: KYC_STATUS.NOT_STARTED
-//       });
-//     }
-//     console.log("Traveller KYC ensured for user:", user.id);
-
-//     roles.push(ROLES.TRAVELLER);
-//     console.log("User upgraded to Traveller role:", user.id);
-//   }
-
-
-//   // 🔐 Generate token (role not included)
-//   const token = generateToken({ userId: user.id });
-
-//   const kycStatus =
-//     user.travellerKYC?.status || KYC_STATUS.NOT_STARTED;
-
-//   return { user, token, roles, kycStatus };
-// }
 
 export async function login(email, password, loginRole) {
 
@@ -266,14 +193,14 @@ export async function login(email, password, loginRole) {
   let activeRole;
 
   // ==============================
-  // 🔐 If ADMIN in DB → always ADMIN
+  //  If ADMIN in DB → always ADMIN
   // ==============================
   if (dbRoles.includes(ROLES.ADMIN)) {
     activeRole = ROLES.ADMIN;
   }
 
   // ==============================
-  // 🚀 Traveller selection logic
+  //  Traveller selection logic
   // ==============================
   else if (loginRole === ROLES.TRAVELLER) {
 
@@ -313,7 +240,7 @@ export async function login(email, password, loginRole) {
   }
 
   // ==============================
-  // 👤 Normal user login
+  //  Normal user login
   // ==============================
   else {
     activeRole = dbRoles[0];
@@ -493,29 +420,5 @@ export async function becomeTraveller(userId) {
   });
 }
 
-/**
-GET USER PROFILE
- */
-export async function getUserProfile(userId) {
 
-  const user = await User.findByPk(userId, {
-    include: [
-      { model: UserProfile, as: "profile" },
-      { model: TravellerProfile, as: "travellerProfile" },
-      { model: Role, as: "roles", through: { attributes: [] } },
-      { model: TravellerKYC, as: "travellerKYC" }
-    ],
-  });
-  console.log("Fetched user profile for user ID:", userId, user ? "found" : "not found");
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  return {
-    user,
-    roles: user.roles.map(r => r.name),
-    kycStatus: user.travellerKYC?.status || "NOT_STARTED"
-  };
-}
 
