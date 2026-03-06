@@ -1,424 +1,189 @@
-
 import bcrypt from "bcrypt";
 import sequelize from "../../config/database.config.js";
 import User from "../user/user.model.js";
 import Role from "../user/role.model.js";
 import UserRole from "../user/userRole.model.js";
 import TravellerKYC from "../traveller/travellerKYC.model.js";
-import { ROLES, KYC_STATUS } from "../../middlewares/role.middleware.js";
-import { generateToken } from "../../utils/jwt.util.js";
 import UserProfile from "../user/userProfile.model.js";
 import TravellerProfile from "../traveller/travellerProfile.model.js";
-import { validateSignupData, validateEmail, validatePhone, checkDuplicateEmail, checkDuplicatePhone } from "../../utils/validation.util.js";
+import { KYC_STATUS, ROLES } from "../../utils/constants.js";
+import { generateToken } from "../../utils/jwt.util.js";
+import {
+  validateSignupData,
+  // validateEmail,
+  // validatePhone,
+  // checkDuplicateEmail,
+  // checkDuplicatePhone
+} from "../../utils/validation.util.js";
 
-
-
-
-// Export generateToken for use in controllers
 export { generateToken };
 
 /**
+ * ─────────────────────────────
  * SIGNUP
+ * ─────────────────────────────
  */
-export async function signup(userData, selectedRole) {
-  
+export async function signup(userData) {
 
-  // 0️⃣ Validate input data
+console.log("Signup data:", userData); 
+
+  // 1️Validate
   validateSignupData(userData);
 
-  // Hash password before storing
+  // 2️ Hash password
   const hashedPassword = await bcrypt.hash(userData.password, 10);
+  console.log("Hashed password:", hashedPassword); // Debug log
 
   return await sequelize.transaction(async (t) => {
+    console.log("Transaction started"); // Debug log
 
-    // ✅ 0️⃣ CHECK IF EMAIL ALREADY EXISTS
-    const existingUser = await User.findOne({
+    // 3️Check duplicate email
+    const existingEmail = await User.findOne({
       where: { email: userData.email },
       transaction: t
     });
-
-    if (existingUser) {
-      throw new Error("Email already exists");
-    }
-    // 1️⃣ Create user
-    const { name, phone_number, alternate_phone, email, address, city, state } = userData;
-
-    const user = await User.create(
-      {
-        name,
-        phone_number,
-        alternate_phone: alternate_phone || null,
-        email,
-        address: address || null,
-        city,
-        state,
-        password: hashedPassword
-      },
-      { transaction: t }
-    );
-    console.log("User created with ID:", user.id);
+    console.log("Existing email check:", existingEmail); // Debug log
+    if (existingEmail) throw new Error("Email already registered");
 
 
-    // 2️⃣ Create profile depending on role
-    let travellerProfile;
-    if (selectedRole === ROLES.TRAVELLER) {
-      // Create TravellerProfile
+    // 4️Check duplicate phone
+    const existingPhone = await User.findOne({
+      where: { phone_number: userData.phone_number },
+      transaction: t
+    });
+    console.log("Existing phone check:", existingPhone); // Debug log
+    if (existingPhone) throw new Error("Phone number already registered");
 
-      travellerProfile = await TravellerProfile.create(
-        {
-          user_id: user.id,
-          name: user.name,
-          email: user.email,
-          phone_number: user.phone_number,
-          vehicle_type: null,
-          capacity_kg: null,
-          status: "PENDING"
-        },
-        { transaction: t }
-      );
-      console.log("TravellerProfile created for user:", travellerProfile.user_id);
+    // 5️ Create User 
+    const user = await User.create({
+      email:           userData.email,
+      password:        hashedPassword,
+      phone_number:    userData.phone_number,
+      alternate_phone: userData.alternate_phone || null,
+    }, { transaction: t });
 
-      // Also create KYC entry
-      await TravellerKYC.create(
-        { user_id: user.id, status: KYC_STATUS.PENDING },
-        { transaction: t }
-      );
-      console.log("Traveller KYC created.");
-    } else {
-      // Create UserProfile for regular users
-      travellerProfile = await UserProfile.create(
-        {
-          user_id: user.id,
-          full_name: name,
-          address: address || null,
-          city: city || null,
-          state: state || null,
-          alternate_phone: alternate_phone || null
-        },
-        { transaction: t }
-      );
-      console.log("UserProfile created for user:", user.id);
+    console.log("User created:", user.id); // Debug log
+
+    // 6 Create UserProfile 
+    // ✅ full_name, address, city, state → user_profiles only
+    await UserProfile.create({
+      user_id:   user.id,
+      name: userData.name || null,
+      address:   userData.address   || null,
+      city:      userData.city      || null,
+      state:     userData.state     || null,
+    }, { transaction: t });
+
+    //  Create TravellerProfile 
+    await TravellerProfile.create({
+      user_id: user.id,
+      status:  "INCOMPLETE",  
+    }, { transaction: t });
+
+    // 8️⃣ Create TravellerKYC 
+    await TravellerKYC.create({
+      user_id: user.id,
+      status:  KYC_STATUS.NOT_STARTED,
+    }, { transaction: t });
+
+    //  Fetch BOTH roles from DB
+    const [individualRole, travellerRole] = await Promise.all([
+      Role.findOne({ where: { name: ROLES.INDIVIDUAL }, transaction: t }),
+      Role.findOne({ where: { name: ROLES.TRAVELLER  }, transaction: t }),
+    ]);
+
+    if (!individualRole || !travellerRole) {
+      throw new Error("Roles not found. Run seeder first.");
     }
 
+    //  Assign BOTH roles 
+    await UserRole.bulkCreate([
+      { user_id: user.id, role_id: individualRole.id },
+      { user_id: user.id, role_id: travellerRole.id  },
+    ], { transaction: t });
 
-    // 2️⃣ Helper to fetch role safely
-    async function getRoleByName(roleName) {
-      const role = await Role.findOne({ where: { name: roleName }, transaction: t });
-      if (!role) throw new Error(`Role not found: ${roleName}`);
-      return role;
-    }
-    console.log("Role fetcher initialized.");
-
-    // 3️⃣ Assign roles
-    const rolesToAssign = [];
-    console.log("Assigning roles...");
-
-    // Always assign INDIVIDUAL for non-admin
-    if (selectedRole !== ROLES.ADMIN) {
-      const individualRole = await getRoleByName(ROLES.INDIVIDUAL);
-      rolesToAssign.push(individualRole);
-      console.log("Individual role assigned.");
-    }
-    console.log("Selected Role:", selectedRole);
-
-    // Assign TRAVELLER role if user selected Traveller
-    if (selectedRole === ROLES.TRAVELLER) {
-      const travellerRole = await getRoleByName(ROLES.TRAVELLER);
-      rolesToAssign.push(travellerRole);
-      console.log("Traveller role assigned.");
-
-      // Create KYC entry
-      // await TravellerKYC.create(
-      //   { user_id: user.id, status: KYC_STATUS.PENDING },
-      //   { transaction: t }
-      // );
-      // console.log("Traveller KYC created.");
-    }
-    console.log("Roles to assign:", rolesToAssign.map(r => r.name));
-
-
-    // 4️⃣ Store roles in UserRole table
-    for (const role of rolesToAssign) {
-      await UserRole.create(
-        { user_id: user.id, role_id: role.id },
-        { transaction: t }
-      );
-    }
-
-    // 5️⃣ Generate token & return roles for frontend
-    const kycStatus = selectedRole === ROLES.TRAVELLER ? KYC_STATUS.PENDING : KYC_STATUS.NOT_STARTED;
-
-    console.log("Generating token for user ID:", user.id);
-
-    const token = generateToken({ userId: user.id });  // correct
-    console.log("Token generated.");
+    // Generate token
+    const token = generateToken({ userId: user.id });
 
     return {
-      user,
-      travellerProfile,
       token,
-      roles: rolesToAssign.map(r => r.name),
-      kycStatus
+      user: {
+        id:           user.id,
+        email:        user.email,
+        phone_number: user.phone_number,
+      },
+      roles:   [ROLES.INDIVIDUAL, ROLES.TRAVELLER],
+      message: "Signup successful! You can login as Individual or Traveller.",
     };
-
 
   });
 }
 
 
 /**
+ * ─────────────────────────────
  * LOGIN
+ * ─────────────────────────────
  */
-
 export async function login(email, password, loginRole) {
 
+  // 1Find user — include roles + KYC only
   const user = await User.findOne({
     where: { email },
     attributes: { include: ["password"] },
     include: [
-      { model: UserProfile, as: "profile" },
-      { model: TravellerProfile, as: "travellerProfile" },
-      { model: Role, as: "roles", through: { attributes: [] } },
-      { model: TravellerKYC, as: "travellerKYC" }
+      {
+        model: Role,
+        as: "roles",
+        through: { attributes: [] },
+      },
+      {
+        model: TravellerKYC,
+        as: "travellerKYC",
+        attributes: ["status"],
+      },
     ],
   });
 
-  if (!user) throw new Error("User not found");
+  //  User not found
+  if (!user) throw new Error("Email not registered");
 
+  // 3️⃣ Verify password
   const match = await bcrypt.compare(password.trim(), user.password);
   if (!match) throw new Error("Invalid password");
 
+  // 4️⃣ Get roles from DB
   const dbRoles = user.roles.map(r => r.name);
 
-  let activeRole;
-
-  // ==============================
-  //  If ADMIN in DB → always ADMIN
-  // ==============================
+  // 5️⃣ Admin — always admin
   if (dbRoles.includes(ROLES.ADMIN)) {
-    activeRole = ROLES.ADMIN;
+    const token = generateToken({ userId: user.id });
+    return {
+      token,
+      user: { id: user.id, email: user.email },
+      activeRole: ROLES.ADMIN,
+      roles: dbRoles,
+      kycStatus: KYC_STATUS.NOT_STARTED,
+    };
   }
 
-  // ==============================
-  //  Traveller selection logic
-  // ==============================
-  else if (loginRole === ROLES.TRAVELLER) {
-
-    if (!dbRoles.includes(ROLES.TRAVELLER)) {
-
-      const travellerRole = await Role.findOne({
-        where: { name: ROLES.TRAVELLER }
-      });
-
-      await UserRole.create({
-        user_id: user.id,
-        role_id: travellerRole.id
-      });
-
-      if (!user.travellerProfile) {
-        await TravellerProfile.create({
-          user_id: user.id,
-          name: user.name,
-          email: user.email,
-          phone_number: user.phone_number,
-          status: "PENDING"
-        });
-      }
-
-      if (!user.travellerKYC) {
-        await TravellerKYC.create({
-          user_id: user.id,
-          status: KYC_STATUS.NOT_STARTED
-        });
-      }
-
-      activeRole = ROLES.TRAVELLER;
-    } else {
-      activeRole = ROLES.TRAVELLER;
-    }
-
+  // 6️⃣ Verify requested role — NEVER create here
+  if (!dbRoles.includes(loginRole)) {
+    throw new Error(`You don't have ${loginRole} access`);
   }
 
-  // ==============================
-  //  Normal user login
-  // ==============================
-  else {
-    activeRole = dbRoles[0];
-  }
-
+  // 7️⃣ Generate token — only userId
   const token = generateToken({ userId: user.id });
 
-  const kycStatus =
-    user.travellerKYC?.status || KYC_STATUS.NOT_STARTED;
-
   return {
-    user,
     token,
-    roles: [activeRole],
-    kycStatus
+    user: {
+      id:           user.id,
+      email:        user.email,
+      phone_number: user.phone_number,
+    },
+    activeRole: loginRole,
+    roles:      dbRoles,
+    kycStatus:  user.travellerKYC?.status || KYC_STATUS.NOT_STARTED,
   };
 }
-
-/**
- * UPDATE PROFILE 
- */
-
-export async function updateProfile(userId, updateData) {
-  const user = await User.findByPk(userId);
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  // 🔥 EMAIL VALIDATION
-  if (updateData.email && updateData.email !== user.email) {
-    validateEmail(updateData.email);
-    await checkDuplicateEmail(updateData.email, userId);
-  }
-
-  // 🔥 PHONE VALIDATION
-  if (
-    updateData.phone_number &&
-    updateData.phone_number !== user.phone_number
-  ) {
-    validatePhone(updateData.phone_number);
-    await checkDuplicatePhone(updateData.phone_number, userId);
-  }
-
-  // ✅ Update USER table
-  await user.update({
-    name: updateData.name ?? user.name,
-    email: updateData.email ?? user.email,
-    phone_number: updateData.phone_number ?? user.phone_number,
-    address: updateData.address ?? user.address,
-    city: updateData.city ?? user.city,
-    state: updateData.state ?? user.state,
-  });
-
-  // ✅ Update TravellerProfile
-  const travellerProfile = await TravellerProfile.findOne({
-    where: { user_id: userId },
-  });
-
-  if (travellerProfile) {
-    await travellerProfile.update({
-      name: updateData.name ?? travellerProfile.name,
-      email: updateData.email ?? travellerProfile.email,
-      phone_number:
-        updateData.phone_number ?? travellerProfile.phone_number,
-      vehicle_type:
-        updateData.vehicle_type ?? travellerProfile.vehicle_type,
-      capacity_kg:
-        updateData.capacity_kg ?? travellerProfile.capacity_kg,
-      status: updateData.status ?? travellerProfile.status,
-    });
-  }
-
-  return {
-    user,
-    travellerProfile: travellerProfile || null,
-  };
-}
-
-
-/**
- * BECOME TRAVELLER
- */
-export async function becomeTraveller(userId) {
-  console.log("User requesting to become Traveller:", userId);
-  return await sequelize.transaction(async (t) => {
-    console.log("Transaction started for user ID:", userId);
-    // 1️⃣ Fetch user with roles and KYC
-    const user = await User.findByPk(userId, {
-      include: [
-        { model: Role },
-        { model: TravellerKYC, as: "travellerKYC" }
-      ],
-      transaction: t
-    });
-    console.log("User fetched in transaction:", user ? user.id : "not found");
-
-    if (!user) throw new Error("User not found");
-    console.log("User found:", user.id);
-
-    // 2️⃣ Check if user already has Traveller role
-    const hasTraveller = user.Roles?.some(
-      r => r.name === ROLES.TRAVELLER
-    );
-    console.log("User has Traveller role:", hasTraveller);
-
-    // 3️⃣ Assign Traveller role if not present
-    if (!hasTraveller) {
-      const travellerRole = await Role.findOne({
-        where: { name: ROLES.TRAVELLER },
-        transaction: t
-      });
-      console.log("Traveller role fetched:", travellerRole ? travellerRole.id : "not found");
-      if (!travellerRole) {
-        throw new Error("Traveller role not found in DB");
-      }
-      console.log("Assigning Traveller role to user:", user.id);
-      await UserRole.create(
-        {
-          user_id: user.id,
-          role_id: travellerRole.id
-        },
-        { transaction: t }
-      );
-      console.log("Traveller role assigned to user:", user.id);
-
-    }
-
-    // 4️⃣ Create KYC record if missing
-    const kyc = await TravellerKYC.findOne({
-      where: { user_id: user.id },
-      transaction: t
-    });
-    console.log("Traveller KYC fetched for user:", user.id, kyc ? "exists" : "not found");
-
-
-    if (!kyc) {
-      await TravellerKYC.create(
-        {
-          user_id: user.id,
-          status: KYC_STATUS.NOT_STARTED
-        },
-        { transaction: t }
-      );
-
-    }
-    console.log("Traveller KYC ensured for user:", user.id);
-
-    // ✅ 5️⃣ Ensure TravellerProfile exists
-    let travellerProfile = await TravellerProfile.findOne({ where: { user_id: user.id }, transaction: t });
-    if (!travellerProfile) {
-      travellerProfile = await TravellerProfile.create({ user_id: user.id }, { transaction: t });
-      console.log("TravellerProfile created for user:", user.id);
-    }
-
-    // 5️⃣ Fetch updated roles
-    const roles = await Role.findAll({
-      include: {
-        model: User,
-        where: { id: user.id }
-      },
-      transaction: t
-    });
-    console.log("Updated roles fetched for user:", user.id, roles.map(r => r.name));
-
-    // 6️⃣ Generate fresh token (optional but recommended)
-    const token = generateToken({ userId: user.id })
-    console.log("New token generated for user:", user.id);
-
-    return {
-      user,
-      token,
-      roles: roles.map(r => r.name),
-      kycStatus: KYC_STATUS.NOT_STARTED
-    };
-
-  });
-}
-
-
-

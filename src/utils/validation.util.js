@@ -46,12 +46,12 @@ export function validateSignupData(userData) {
 
     // ✅ Name — only letters and spaces, min 2 characters
     if (!userData.name || !userData.name.trim()) {
-        errors.push("Name is required");
+        errors.push("Full name is required");
     } else {
         if (!/^[A-Za-z\s]+$/.test(userData.name))
-            errors.push("Name must contain only letters");
+            errors.push("Full name must contain only letters");
         if (userData.name.trim().length < 2)
-            errors.push("Name must be at least 2 characters");
+            errors.push("Full name must be at least 2 characters");
     }
 
     if (errors.length > 0) {

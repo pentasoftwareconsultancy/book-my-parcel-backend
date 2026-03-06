@@ -1,6 +1,6 @@
 import TravellerKYC from "./travellerKYC.model.js";
 import User from "../user/user.model.js";
-import { KYC_STATUS } from "../../middlewares/role.middleware.js";
+import { KYC_STATUS } from "../../utils/constants.js";
 import TravellerRoute from "./travellerRoute.model.js";
 import TravellerProfile from "./travellerProfile.model.js";
 /* SUBMIT / UPDATE KYC */

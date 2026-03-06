@@ -1,5 +1,5 @@
 import * as travellerService from "./traveller.service.js";
-import { ROLES } from "../../middlewares/role.middleware.js";
+import { ROLES } from "../../utils/constants.js";
 import Booking from "../booking/booking.model.js";
 import Parcel from "../parcel/parcel.model.js";
 import Address from "../parcel/address.model.js";

@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import User from "../modules/user/user.model.js";
 import Role from "../modules/user/role.model.js";
 import UserRole from "../modules/user/userRole.model.js";
-import { ROLES } from "../middlewares/role.middleware.js";
+import { ROLES } from "./constants.js";
 
 export const createDefaultAdmin = async () => {
   const existingAdmin = await User.findOne({

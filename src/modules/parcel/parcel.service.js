@@ -3,7 +3,7 @@ import Parcel from "./parcel.model.js";
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
-import { BOOKING_STATUS ,BOOKING_TRANSITIONS} from "../../middlewares/role.middleware.js";
+import { BOOKING_STATUS ,BOOKING_TRANSITIONS} from "../../utils/constants.js";
 
 // Map package size to weight (example)
 const weightMap = { small: 1, medium: 5, large: 10, extra_large: 20 };

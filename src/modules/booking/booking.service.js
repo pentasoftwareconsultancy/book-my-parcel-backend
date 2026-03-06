@@ -1,7 +1,8 @@
 import sequelize from "../../config/database.config.js";
 import Booking from "./booking.model.js";
 import BookingStatusLog from "./bookingStatusLog.model.js";
-import { BOOKING_STATUS, BOOKING_TRANSITIONS } from "../../middlewares/role.middleware.js";
+import { BOOKING_TRANSITIONS } from "../../utils/constants.js";
+import { BOOKING_STATUS } from "../../utils/constants.js";
 
 export async function updateBookingStatus(bookingId, newStatus, userId, extraData = {}) {
 
