@@ -15,25 +15,9 @@ import Payment from "../payment/payment.model.js";
  * @param {number} limit
  * @param {string} role
  */
-export const getAllUsers = async ({ page = 1, limit = 10, role = null }) => {
+export const getAllUsers = async ({ page = 1, limit = 10 }) => {
   const offset = (page - 1) * limit;
 
-  let whereClause = "";
-  let replacements = { limit, offset };
-
-  if (role) {
-    // Role filtering requires joining with user_roles and roles tables
-    whereClause = `
-      WHERE EXISTS (
-        SELECT 1 FROM user_roles ur 
-        JOIN roles r ON ur.role_id = r.id 
-        WHERE ur.user_id = u.id AND r.name = :role
-      )
-    `;
-    replacements.role = role;
-  }
-
-  // Fetch users
   const users = await sequelize.query(
     `
     SELECT 
@@ -42,40 +26,36 @@ export const getAllUsers = async ({ page = 1, limit = 10, role = null }) => {
       u.phone_number,
       u.alternate_phone,
       u.email,
-      u.address,
-      u.city,
-      u.state,
-      u.password,
-      u.is_active,
-      u.is_verified,
       u."createdAt",
-      u."updatedAt",
-      CASE 
-        WHEN EXISTS (
-          SELECT 1 FROM traveller_kyc tk 
-          WHERE tk.user_id = u.id AND tk.status = 'APPROVED'
-        ) THEN true 
-        ELSE false 
-      END as kyc_verified
+      u."updatedAt"
     FROM users u
-    ${whereClause}
+    WHERE EXISTS (
+      SELECT 1 FROM user_roles ur
+      JOIN roles r ON ur.role_id = r.id
+      WHERE ur.user_id = u.id
+      AND r.name = 'INDIVIDUAL'
+    )
     ORDER BY u."createdAt" DESC
     LIMIT :limit OFFSET :offset
     `,
     {
-      replacements,
+      replacements: { limit, offset },
       type: QueryTypes.SELECT
     }
   );
 
-  // Count total users (for pagination meta)
   const countResult = await sequelize.query(
     `
-    SELECT COUNT(*) as total FROM users u
-    ${whereClause}
+    SELECT COUNT(*) as total
+    FROM users u
+    WHERE EXISTS (
+      SELECT 1 FROM user_roles ur
+      JOIN roles r ON ur.role_id = r.id
+      WHERE ur.user_id = u.id
+      AND r.name = 'INDIVIDUAL'
+    )
     `,
     {
-      replacements: role ? { role } : {},
       type: QueryTypes.SELECT
     }
   );
@@ -166,11 +146,10 @@ export const getTravelersForKYC = async ({ page = 1, limit = 10, status = null }
       u.name,
       u.email,
       u.phone_number,
-      u.city,
-      u.state,
       u."createdAt" AS user_created_at,
       kyc.id AS kyc_id,
       kyc.status AS kyc_status,
+      kyc.address,
       kyc.aadhar_front,
       kyc.aadhar_back,
       kyc.pan_front,
@@ -248,7 +227,7 @@ export const updateTravelerKYCStatus = async (kycId, status) => {
   return kyc;
 };
 
-// admin overview dashboard
+// -------------------------------------- admin overview dashboard ----------------------------------------
 
 export const getRoleWiseUserCountService = async () => {
   return await Role.findAll({

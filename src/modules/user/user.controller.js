@@ -5,6 +5,7 @@ import Parcel from "../parcel/parcel.model.js";
 import Address from "../parcel/address.model.js";
 import User from "./user.model.js";
 import TravellerTrip from "../traveller/travellerTrip.model.js";
+import { getActiveTravellers } from "./user.service.js";
 
 export const getUserOrders = async (req, res, next) => {
   try {
@@ -231,5 +232,15 @@ export const getUserStats = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+
+export const getActiveTravellersController = async (req, res) => {
+  try {
+    const data = await getActiveTravellers();
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
