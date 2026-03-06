@@ -7,7 +7,6 @@ const router = express.Router();
 // Traveler dashboard endpoints (protected)
 router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
 router.get("/dashboard/stats", authMiddleware, ctrl.getTravelerStats);
-router.get("/dashboard/available-requests", authMiddleware, ctrl.getAvailableRequests); 
 
 
 export default router;

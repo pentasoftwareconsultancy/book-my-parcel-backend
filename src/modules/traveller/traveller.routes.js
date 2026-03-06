@@ -78,7 +78,9 @@ router.put(
 // Get nearby travelers
 router.get("/nearby", ctrl.getNearbyTravelers);
 
+// Fetch available delivery requests for the traveller
 
+router.get("/dashboard/available-requests", authMiddleware, ctrl.getAvailableRequests);
 
 // Add routes for traveller routes and profiles as needed
 
@@ -93,5 +95,7 @@ router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
 router.post("/trip", trip.createTravellerTrip);
 router.get("/trip", trip.getAllTravellerTrips);
 router.get("/trip/:id", trip.getTravellerTripById);
+ 
+
 
 export default router;

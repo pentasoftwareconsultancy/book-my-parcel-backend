@@ -127,7 +127,19 @@ export async function getParcelById(parcelId) {
     ],
   });
 
-  return parcel;
+  if (!parcel) return null;
+
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const parcelData = parcel.toJSON();
+  
+  if (Array.isArray(parcelData.photos)) {
+    parcelData.photos = parcelData.photos.map(p => {
+      const cleanPath = p.startsWith('/') ? p.substring(1) : p;
+      return `${baseUrl}/${cleanPath.replace(/\\/g, '/')}`;
+    });
+  }
+
+  return parcelData;
 }
 
 
@@ -222,8 +234,8 @@ export const getMatchingParcelsForTraveller = async (userId, options = {}) => {
     });
 
     return {
-      parcels,
-      pagination: {
+  parcels: parcels.map(transformParcelForTraveller),
+  pagination: {
         total: count,
         page: parseInt(page),
         limit: parseInt(limit),
@@ -238,6 +250,50 @@ export const getMatchingParcelsForTraveller = async (userId, options = {}) => {
     };
   }
 };
+
+
+const transformParcelForTraveller = (parcel) => {
+  const user = parcel.User;
+  const userRating = user?.profile?.rating || 4.8;
+  const totalAmount = parcel.price_quote || 0;
+  const earnings = Math.round(totalAmount * 0.5);
+  const isUrgent = parcel.delivery_speed === 'express' || parcel.delivery_speed === 'same_day';
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+
+  return {
+    id: parcel.id,
+    bookingId: `BMP${parcel.id.substring(0, 6).toUpperCase()}`,
+    status: isUrgent ? 'URGENT' : 'AVAILABLE',
+    customer: {
+      name: parcel.pickupAddress?.name || 'Unknown',
+      rating: userRating
+    },
+    pickup: {
+      city: parcel.pickupAddress?.city || '',
+      address: parcel.pickupAddress?.address || '',
+      state: parcel.pickupAddress?.state || ''
+    },
+    drop: {
+      city: parcel.deliveryAddress?.city || '',
+      address: parcel.deliveryAddress?.address || '',
+      state: parcel.deliveryAddress?.state || ''
+    },
+    parcelType: parcel.parcel_type || 'General',
+    weight: `${parcel.weight} kg`,
+    packageSize: parcel.package_size,
+    distance: '148 km',
+    totalAmount: totalAmount,
+    earnings: earnings,
+    deliverySpeed: parcel.delivery_speed,
+    description: parcel.description,
+    value: parcel.value,
+      photos: Array.isArray(parcel.photos) 
+      ? parcel.photos.map(p => `${baseUrl}/${p.replace(/\\/g, '/')}`)
+      : [],
+    createdAt: parcel.createdAt
+  };
+};
+
 
 
   

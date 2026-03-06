@@ -351,67 +351,19 @@ export const getAvailableRequests = async (req, res, next) => {
     const travelerId = req.user.id;
     const { page = 1, limit = 10 } = req.query;
     
-    console.log('Fetching available requests for traveller:', travelerId);
-    
     const result = await getMatchingParcelsForTraveller(travelerId, { page, limit });
-    
-    console.log('Found parcels:', result.parcels.length);
-    
-    // Transform data for frontend
-    const availableRequests = result.parcels.map(parcel => {
-      const user = parcel.User;
-      const userRating = user?.profile?.rating || 4.8;
-      
-      const totalAmount = parcel.price_quote || 0;
-      const earnings = Math.round(totalAmount * 0.5);
-      
-      const isUrgent = parcel.delivery_speed === 'express' || parcel.delivery_speed === 'same_day';
-      
-      return {
-        id: parcel.id,
-        bookingId: `BMP${parcel.id.substring(0, 6).toUpperCase()}`,
-        status: isUrgent ? 'URGENT' : 'AVAILABLE',
-        customer: {
-          name: parcel.pickupAddress?.name || 'Unknown',
-          rating: userRating
-        },
-        pickup: {
-          city: parcel.pickupAddress?.city || '',
-          address: parcel.pickupAddress?.address || '',
-          state: parcel.pickupAddress?.state || ''
-        },
-        drop: {
-          city: parcel.deliveryAddress?.city || '',
-          address: parcel.deliveryAddress?.address || '',
-          state: parcel.deliveryAddress?.state || ''
-        },
-        parcelType: parcel.parcel_type || 'General',
-        weight: `${parcel.weight} kg`,
-        packageSize: parcel.package_size,
-        distance: '148 km',
-        totalAmount: totalAmount,
-        earnings: earnings,
-        deliverySpeed: parcel.delivery_speed,
-        description: parcel.description,
-        value: parcel.value,
-        createdAt: parcel.createdAt
-      };
-    });
     
     res.json({
       success: true,
       message: "Available requests fetched successfully",
-      data: availableRequests,
+      data: result.parcels,
       pagination: result.pagination
     });
   } catch (error) {
-    console.error('Error in getAvailableRequests:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch available requests'
-    });
+    next(error);
   }
 };
+
 
 
 
