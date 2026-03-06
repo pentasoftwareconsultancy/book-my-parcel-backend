@@ -163,7 +163,7 @@ export const getRecentBookings = async (req, res) => {
   }
 };
 
-//  admin overview dashboard
+// ---------------------------------- admin overview dashboard -------------------------------------------
 
 export const getAdminUserRoleStats = async (req, res, next) => {
   try {
