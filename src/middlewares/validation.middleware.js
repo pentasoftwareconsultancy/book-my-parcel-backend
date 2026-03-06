@@ -1,44 +1,98 @@
+import { body, validationResult } from "express-validator";
 
-// validation for the    kyc submit
-
-export const validateKYC = (req, res, next) => {
-  const {
-    first_name,
-    last_name,
-    dob,
-    gender,
-    aadhar_number,
-    pan_number
-  } = req.body;
-
-  const errors = [];
-
-  if (!first_name) errors.push("First name required");
-  if (!last_name) errors.push("Last name required");
-  if (!dob) errors.push("DOB required");
-
-  if (!aadhar_number || !/^\d{12}$/.test(aadhar_number))
-    errors.push("Valid Aadhar required");
-
-  if (!pan_number || !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan_number))
-    errors.push("Valid PAN required");
-
-  if (errors.length > 0)
-    return res.status(400).json({ errors });
-
+// Common error handler
+const handleValidation = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      errors: errors.array()
+    });
+  }
   next();
 };
 
+export const validateUser = [
+  body("name")
+    .trim()
+    .notEmpty().withMessage("Name is required")
+    .isLength({ min: 2, max: 50 }).withMessage("Name must be 2-50 characters")
+    .matches(/^[A-Za-z\s]+$/).withMessage("Name must contain only letters"),
 
-// validation for the    kyc update 
+  body("email")
+    .trim()
+    .isEmail().withMessage("Invalid email format")
+    .normalizeEmail(),
 
-export const validateStatus = (req, res, next) => {
-  const { status } = req.body;
+  body("phone")
+    .trim()
+    .matches(/^[6-9]\d{9}$/).withMessage("Invalid Indian phone number"),
 
-  const allowed = ["PENDING", "APPROVED", "REJECTED"];
+  body("password")
+    .isLength({ min: 8 }).withMessage("Password must be at least 8 characters")
+    .matches(/[A-Z]/).withMessage("Must contain one uppercase letter")
+    .matches(/[a-z]/).withMessage("Must contain one lowercase letter")
+    .matches(/[0-9]/).withMessage("Must contain one number")
+    .matches(/[@$!%*?&]/).withMessage("Must contain one special character"),
 
-  if (!status || !allowed.includes(status))
-    return res.status(400).json({ error: "Invalid status value" });
+  handleValidation
+];
 
-  next();
-};
+export const validateKYC = [
+  body("aadhaar")
+    .trim()
+    .matches(/^\d{12}$/).withMessage("Aadhaar must be 12 digits"),
+
+  body("pan")
+    .trim()
+    .matches(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/)
+    .withMessage("Invalid PAN format"),
+
+  body("drivingLicense")
+    .trim()
+    .matches(/^[A-Z]{2}\d{2}\s?\d{11}$/)
+    .withMessage("Invalid Driving License format"),
+
+  body("ifsc")
+    .trim()
+    .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+    .withMessage("Invalid IFSC code"),
+
+  body("accountNumber")
+    .trim()
+    .isLength({ min: 9, max: 18 })
+    .withMessage("Account number must be 9-18 digits")
+    .isNumeric().withMessage("Account number must contain only digits"),
+
+  handleValidation
+];
+
+export const validateCommonFields = [
+  body("dateOfBirth")
+    .isISO8601().withMessage("Invalid date format (YYYY-MM-DD)")
+    .custom(value => {
+      const dob = new Date(value);
+      if (dob >= new Date()) {
+        throw new Error("Date of birth must be in the past");
+      }
+      return true;
+    }),
+
+  body("gender")
+    .isIn(["MALE", "FEMALE", "OTHER"])
+    .withMessage("Invalid gender value"),
+
+  body("date")
+    .optional()
+    .isISO8601().withMessage("Invalid date format"),
+
+  body("number")
+    .optional()
+    .isNumeric().withMessage("Must be a number"),
+
+  body("earning")
+    .optional()
+    .isFloat({ min: 0 }).withMessage("Earning must be positive"),
+
+  handleValidation
+];

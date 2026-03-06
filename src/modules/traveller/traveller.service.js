@@ -8,6 +8,25 @@ export const submitKYC = async (userId, body, files) => {
 
   delete body.status; // prevent manual status override
 
+// Validate Aadhar
+if (body.aadhar_number) {
+  const cleaned = body.aadhar_number.replace(/\s/g, '');
+  if (!/^\d{12}$/.test(cleaned) && !cleaned.includes('X')) {
+    throw new Error("Invalid Aadhar number format. Must be 12 digits.");
+  }
+  body.aadhar_number = cleaned;
+}
+
+// Validate PAN
+if (body.pan_number) {
+  const cleaned = body.pan_number.replace(/\s/g, '').toUpperCase();
+  if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleaned) && !cleaned.includes('X')) {
+    throw new Error("Invalid PAN format. Must be like ABCDE1234F.");
+  }
+  body.pan_number = cleaned;
+}
+
+
   const payload = {
     user_id: userId,
     ...body,
@@ -40,11 +59,63 @@ export const submitKYC = async (userId, body, files) => {
 };
 
 
+
 /* GET MY KYC */
 export const getMyKYC = async (userId) => {
   return await TravellerKYC.findOne({
     where: { user_id: userId }
   });
+};
+
+/* GET ALL KYC (ADMIN) */
+export const getAllKYCs = async () => {
+  return await TravellerKYC.findAll({
+    order: [["createdAt", "DESC"]]
+  });
+};
+
+/* FULL UPDATE KYC (Traveller) */
+export const updateTravellerKYC = async (userId, body, files) => {
+
+  const existing = await TravellerKYC.findOne({
+    where: { user_id: userId }
+  });
+
+  if (!existing) {
+    throw new Error("KYC record not found");
+  }
+
+  if (existing.status === KYC_STATUS.APPROVED) {
+    throw new Error("Approved KYC cannot be modified");
+  }
+
+  const payload = {
+    ...body,
+    status: KYC_STATUS.PENDING
+  };
+
+  // Update all file fields (if provided)
+  if (files?.aadharFront)
+    payload.aadhar_front = files.aadharFront[0].path;
+
+  if (files?.aadharBack)
+    payload.aadhar_back = files.aadharBack[0].path;
+
+  if (files?.panFront)
+    payload.pan_front = files.panFront[0].path;
+
+  if (files?.panBack)
+    payload.pan_back = files.panBack[0].path;
+
+  if (files?.drivingPhoto)
+    payload.driving_photo = files.drivingPhoto[0].path;
+
+  if (files?.selfie)
+    payload.selfie = files.selfie[0].path;
+
+  await existing.update(payload);
+
+  return existing;
 };
 
 

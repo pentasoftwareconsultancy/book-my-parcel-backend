@@ -8,4 +8,7 @@ const router = express.Router();
 router.get("/dashboard/orders", authMiddleware, ctrl.getUserOrders);
 router.get("/dashboard/stats", authMiddleware, ctrl.getUserStats);
 
+//Get all active travellers
+router.get("/active-travellers",authMiddleware, ctrl.getActiveTravellersController);
+
 export default router;

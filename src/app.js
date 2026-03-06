@@ -1,7 +1,6 @@
 import express from "express";
 import routes from "./routes.js";
 import cors from "cors";
-import adminRoutes from "./modules/admin/admin.routes.js";
 
 const app = express();
 
@@ -29,9 +28,6 @@ app.use(express.json());
 
 // Routes
 app.use("/api", routes);
-
-// admin login
-app.use("/admin", adminRoutes);
 
 app.use("/uploads", express.static("uploads"));
 

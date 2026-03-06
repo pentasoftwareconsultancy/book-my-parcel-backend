@@ -43,6 +43,7 @@ User.belongsToMany(Role, {
   foreignKey: "user_id",
   otherKey: "role_id",
   onDelete: "CASCADE",
+  as: "roles"
 });
 
 Role.belongsToMany(User, {
@@ -50,6 +51,7 @@ Role.belongsToMany(User, {
   foreignKey: "role_id",
   otherKey: "user_id",
   onDelete: "CASCADE",
+  as: "users"
 });
 
 /* ===========================
