@@ -4,13 +4,10 @@ import cors from "cors";
 
 const app = express();
 
-/* ✅ CORS configuration */
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://book-my-parcel-frontend.vercel.app/api",
   "https://book-my-parcel-frontend.vercel.app",
-  "https://book-my-parcel-fr-git-e20a48-pentasoftwareconsultancys-projects.vercel.app/",
-  "https://book-my-parcel-fr-git-e20a48-pentasoftwareconsultancys-projects.vercel.app/api"
+  "https://book-my-parcel-fr-git-e20a48-pentasoftwareconsultancys-projects.vercel.app"
 ];
 
 app.use(
@@ -28,7 +25,6 @@ app.use(
 
 app.use(express.json());
 
-// Routes
 app.use("/api", routes);
 
 app.use("/uploads", express.static("uploads"));
