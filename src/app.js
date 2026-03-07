@@ -8,7 +8,9 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "https://book-my-parcel-frontend.vercel.app/api",
-  "https://book-my-parcel-frontend.vercel.app"
+  "https://book-my-parcel-frontend.vercel.app",
+  "https://book-my-parcel-fr-git-e20a48-pentasoftwareconsultancys-projects.vercel.app/",
+  "https://book-my-parcel-fr-git-e20a48-pentasoftwareconsultancys-projects.vercel.app/api"
 ];
 
 app.use(
