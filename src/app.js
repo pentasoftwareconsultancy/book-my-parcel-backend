@@ -13,14 +13,13 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-        if (!origin || origin.includes("vercel.app") || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error("Not allowed by CORS"));
-        }
+      if (!origin || origin.includes("vercel.app") || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
       }
     },
-    credentials: true,
+    credentials: true
   })
 );
 
