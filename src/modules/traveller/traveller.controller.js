@@ -7,6 +7,7 @@ import User from "../user/user.model.js";
 import TravellerTrip from "./travellerTrip.model.js";
 import sequelize from "../../config/database.config.js";
 import UserProfile from "../user/userProfile.model.js";
+import { getMatchingParcelsForTraveller } from '../parcel/parcel.service.js';
 
 /* SUBMIT KYC */
 export const submitKYC = async (req, res, next) => {
@@ -339,6 +340,34 @@ export const getTravelerStats = async (req, res, next) => {
     next(error);
   }
 };
+
+
+
+/**
+ * GET AVAILABLE REQUESTS FOR TRAVELLER
+ */
+export const getAvailableRequests = async (req, res, next) => {
+  try {
+    const travelerId = req.user.id;
+    const { page = 1, limit = 10 } = req.query;
+    
+    const result = await getMatchingParcelsForTraveller(travelerId, { page, limit });
+    
+    res.json({
+      success: true,
+      message: "Available requests fetched successfully",
+      data: result.parcels,
+      pagination: result.pagination
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
+
+
 /* CREATE ROUTE */
 export const createRoute = async (req, res, next) => {
   try {

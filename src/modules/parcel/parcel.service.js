@@ -1,5 +1,10 @@
 import sequelize from "../../config/database.config.js";
 import Parcel from "./parcel.model.js";
+import { Op } from 'sequelize';
+import TravellerProfile from '../traveller/travellerProfile.model.js';
+import TravellerRoute from '../traveller/travellerRoute.model.js';
+import User from '../user/user.model.js';
+import UserProfile from '../user/userProfile.model.js';
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
@@ -122,5 +127,173 @@ export async function getParcelById(parcelId) {
     ],
   });
 
-  return parcel;
+  if (!parcel) return null;
+
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const parcelData = parcel.toJSON();
+  
+  if (Array.isArray(parcelData.photos)) {
+    parcelData.photos = parcelData.photos.map(p => {
+      const cleanPath = p.startsWith('/') ? p.substring(1) : p;
+      return `${baseUrl}/${cleanPath.replace(/\\/g, '/')}`;
+    });
+  }
+
+  return parcelData;
 }
+
+
+
+export const getMatchingParcelsForTraveller = async (userId, options = {}) => {
+  const { page = 1, limit = 10 } = options;
+  const offset = (page - 1) * limit;
+
+  try {
+    // Step 1: Get traveller's profile
+    const travellerProfile = await TravellerProfile.findOne({
+      where: { user_id: userId }
+    });
+
+    if (!travellerProfile) {
+      console.log('No traveller profile found');
+      return { parcels: [], pagination: { total: 0, page, limit, totalPages: 0 } };
+    }
+
+    // Step 2: Get traveller's active routes
+    const routes = await TravellerRoute.findAll({
+      where: { 
+        traveller_profile_id: travellerProfile.id,
+        status: 'ACTIVE'
+      }
+    });
+
+    if (routes.length === 0) {
+      console.log('No active routes found');
+      return { parcels: [], pagination: { total: 0, page, limit, totalPages: 0 } };
+    }
+
+    // Step 3: Build city matching conditions
+    const pickupCities = [];
+    const deliveryCities = [];
+
+    routes.forEach(route => {
+      pickupCities.push(route.origin_city);
+      deliveryCities.push(route.destination_city);
+      
+      if (route.stops && Array.isArray(route.stops)) {
+        route.stops.forEach(stop => {
+          if (stop.city) {
+            pickupCities.push(stop.city);
+            deliveryCities.push(stop.city);
+          }
+        });
+      }
+    });
+
+    console.log('Pickup cities:', pickupCities);
+    console.log('Delivery cities:', deliveryCities);
+
+    // Step 4: Find matching parcels with city filtering in SQL
+    const { count, rows: parcels } = await Parcel.findAndCountAll({
+      where: {
+        status: {
+          [Op.in]: ['CREATED', 'MATCHING']
+        }
+      },
+      include: [
+        {
+          model: Address,
+          as: 'pickupAddress',
+          where: {
+            city: {
+              [Op.in]: pickupCities
+            }
+          },
+          required: true
+        },
+        {
+          model: Address,
+          as: 'deliveryAddress',
+          where: {
+            city: {
+              [Op.in]: deliveryCities
+            }
+          },
+          required: true
+        },
+        {
+          model: User,
+          attributes: ['id', 'name', 'phone_number'],
+          required: false
+        }
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']],
+      distinct: true
+    });
+
+    return {
+  parcels: parcels.map(transformParcelForTraveller),
+  pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / limit)
+      }
+    };
+  } catch (error) {
+    console.error('Error in getMatchingParcelsForTraveller:', error);
+    return { 
+      parcels: [], 
+      pagination: { total: 0, page: parseInt(page), limit: parseInt(limit), totalPages: 0 } 
+    };
+  }
+};
+
+
+const transformParcelForTraveller = (parcel) => {
+  const user = parcel.User;
+  const userRating = user?.profile?.rating || 4.8;
+  const totalAmount = parcel.price_quote || 0;
+  const earnings = Math.round(totalAmount * 0.5);
+  const isUrgent = parcel.delivery_speed === 'express' || parcel.delivery_speed === 'same_day';
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+
+  return {
+    id: parcel.id,
+    bookingId: `BMP${parcel.id.substring(0, 6).toUpperCase()}`,
+    status: isUrgent ? 'URGENT' : 'AVAILABLE',
+    customer: {
+      name: parcel.pickupAddress?.name || 'Unknown',
+      rating: userRating
+    },
+    pickup: {
+      city: parcel.pickupAddress?.city || '',
+      address: parcel.pickupAddress?.address || '',
+      state: parcel.pickupAddress?.state || ''
+    },
+    drop: {
+      city: parcel.deliveryAddress?.city || '',
+      address: parcel.deliveryAddress?.address || '',
+      state: parcel.deliveryAddress?.state || ''
+    },
+    parcelType: parcel.parcel_type || 'General',
+    weight: `${parcel.weight} kg`,
+    packageSize: parcel.package_size,
+    distance: '148 km',
+    totalAmount: totalAmount,
+    earnings: earnings,
+    deliverySpeed: parcel.delivery_speed,
+    description: parcel.description,
+    value: parcel.value,
+      photos: Array.isArray(parcel.photos) 
+      ? parcel.photos.map(p => `${baseUrl}/${p.replace(/\\/g, '/')}`)
+      : [],
+    createdAt: parcel.createdAt
+  };
+};
+
+
+
+  
