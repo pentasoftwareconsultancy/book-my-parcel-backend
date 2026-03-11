@@ -3,7 +3,6 @@ import { responseSuccess, responseError } from "../../utils/response.util.js";
 
 /**
  * GET USER ORDERS
- * GET /api/user/dashboard/orders
  */
 export const getUserOrders = async (req, res, next) => {
   try {
@@ -22,7 +21,6 @@ export const getUserOrders = async (req, res, next) => {
 
 /**
  * GET ORDER DETAILS
- * GET /api/user/orders/:bookingId
  */
 export const getOrderDetails = async (req, res, next) => {
   try {
@@ -49,7 +47,6 @@ export const getOrderDetails = async (req, res, next) => {
 
 /**
  * GET USER STATS
- * GET /api/user/dashboard/stats
  */
 export const getUserStats = async (req, res, next) => {
   try {
@@ -68,7 +65,6 @@ export const getUserStats = async (req, res, next) => {
 
 /**
  * GET PROFILE
- * GET /api/user/profile
  */
 export const getProfileController = async (req, res, next) => {
   try {
@@ -87,7 +83,6 @@ export const getProfileController = async (req, res, next) => {
 
 /**
  * UPDATE PROFILE
- * PUT /api/user/profile
  */
 export const updateUserProfileController = async (req, res, next) => {
   try {

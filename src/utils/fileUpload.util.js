@@ -5,7 +5,7 @@ import fs from "fs";
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = path.join("uploads", "parcels","profile_pictures");
+    const uploadPath = path.join("uploads", "parcels");
     fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },

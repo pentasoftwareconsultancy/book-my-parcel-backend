@@ -224,6 +224,8 @@ TravellerKYC.belongsTo(User, {
 
 Parcel.belongsTo(Address, { as: "pickupAddress", foreignKey: "pickup_address_id" });
 Parcel.belongsTo(Address, { as: "deliveryAddress", foreignKey: "delivery_address_id" });
+Address.hasMany(Parcel, { as: "pickupParcels", foreignKey: "pickup_address_id" });
+Address.hasMany(Parcel, { as: "deliveryParcels", foreignKey: "delivery_address_id" });
 
 
 

@@ -1,5 +1,10 @@
 import sequelize from "../../config/database.config.js";
 import Parcel from "./parcel.model.js";
+import { Op } from 'sequelize';
+import TravellerProfile from '../traveller/travellerProfile.model.js';
+import TravellerRoute from '../traveller/travellerRoute.model.js';
+import User from '../user/user.model.js';
+import UserProfile from '../user/userProfile.model.js';
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
