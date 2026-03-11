@@ -11,6 +11,7 @@ const Parcel = sequelize.define(
       primaryKey: true,
     },
     user_id: { type: DataTypes.UUID, allowNull: false },
+    parcel_ref: { type: DataTypes.STRING(20), unique: true, allowNull: true },  //parcel id 
     package_size: {
       type: DataTypes.ENUM("small", "medium", "large", "extra_large"),
       allowNull: false,

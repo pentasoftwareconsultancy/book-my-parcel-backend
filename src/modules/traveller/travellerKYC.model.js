@@ -1,7 +1,6 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
-import { KYC_STATUS } from "../../middlewares/role.middleware.js";
-
+import { KYC_STATUS } from "../../utils/constants.js";
 
 const TravellerKYC = sequelize.define(
   "traveller_kyc",

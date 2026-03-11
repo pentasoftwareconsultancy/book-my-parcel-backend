@@ -1,47 +1,45 @@
-// controllers/auth.controller.js
+import { signup, login } from "./auth.service.js";
+import { responseError, responseSuccess } from "../../utils/response.util.js";
 import * as authService from "./auth.service.js";
-import User from "../user/user.model.js";
-
 /**
+ * ─────────────────────────────
  * SIGNUP CONTROLLER
+ * ─────────────────────────────
  */
 export async function signupController(req, res) {
   try {
-    console.log("Signup req.body:", req.body);
-
-    const { role, selectedRole, ...userData } = req.body;
-    const finalRole = role || selectedRole;
-
-    const result = await authService.signup(userData, finalRole);
-    res.status(201).json(result);
+    const result = await signup(req.body);
+    return responseSuccess(res, result, "Signup successful", 201);
   } catch (err) {
-    console.error("Signup error:", err.message);
-    res.status(400).json({ error: err.message });
+    return responseError(res, err.message, 400);
   }
 }
 
+/**
+ * ─────────────────────────────
+ * LOGIN CONTROLLER
+ * ─────────────────────────────
+ */
+export async function loginController(req, res) {
+  try {
+    const { email, password, role } = req.body;
 
-// export const updateUserProfile = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
+    // Check all fields present
+    if (!email || !password || !role) {
+      return responseError(res, "Email, password and role are required", 400);
+    }
 
-//     const result = await authService.updateProfile(
-//       userId,
-//       req.body
-//     );
+    const result = await login(email, password, role);
+    return responseSuccess(res, result, "Login successful", 200);
 
-//     res.status(200).json({
-//       success: true,
-//       data: result,
-//     });
-//   } catch (error) {
-//     res.status(400).json({
-//       success: false,
-//       message: error.message,
-//     });
-//   }
-// };
+  } catch (err) {
+    return responseError(res, err.message, 400);
+  }
+}
 
+/*
+UPDATE PROFILE CONTROLLER
+*/
 
 export const updateUserProfile = async (req, res) => {
   try {
@@ -58,29 +56,7 @@ export const updateUserProfile = async (req, res) => {
   }
 };
 
-
-
-/**
- * LOGIN CONTROLLER
- */
-export async function loginController(req, res) {
-  try {
-    const { email, password, loginRole } = req.body;
-
-    const result = await authService.login(
-      email,
-      password,
-      loginRole   // 👈 new parameter
-    );
-
-    res.status(200).json(result);
-
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-}
-
-/**
+/*
 GET USER PROFILE
  */
 
@@ -94,109 +70,48 @@ export const getProfileController= async (req, res) => {
 };
 
 /**
- * BECOME TRAVELLER CONTROLLER
+ * UPLOAD PROFILE PHOTO CONTROLLER
  */
-export async function becomeTravellerController(req, res) {
+export async function uploadProfilePhotoController(req, res) {
   try {
     const userId = req.user.id;
-    const result = await authService.becomeTraveller(userId);
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-}
+    const file = req.file;
 
-/**
- * REQUEST OTP CONTROLLER
- */
-export async function requestOTPController(req, res) {
-  try {
-    const { phone } = req.body;
-    
-    // In development, we'll generate a simple 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Store OTP temporarily (in production, use Redis)
-    // For now, we'll just return it in response for development
-    console.log(`OTP for ${phone}: ${otp}`);
+    const result = await authService.uploadProfilePhoto(userId, file);
     
     res.status(200).json({
       success: true,
-      message: "OTP sent successfully",
-      otp: process.env.NODE_ENV === 'development' ? otp : undefined // Only expose in dev
+      message: "Profile photo uploaded successfully",
+      data: result
     });
   } catch (err) {
-    console.error("OTP request error:", err.message);
+    console.error("Upload profile photo error:", err.message);
     res.status(400).json({ error: err.message });
   }
 }
 
 /**
- * VERIFY OTP CONTROLLER
+ * UPDATE PASSWORD CONTROLLER
  */
-export async function verifyOTPController(req, res) {
+export async function updatePasswordController(req, res) {
   try {
-    const { phone, otp, role } = req.body;
-    
-    // In development, we'll just verify the format
-    if (!phone || !otp || !role) {
-      throw new Error("Phone, OTP, and role are required");
+    const userId = req.user.id;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ 
+        error: "Old password and new password are required" 
+      });
     }
-    
-    // Validate OTP format (6 digits)
-    if (!/^\d{6}$/.test(otp)) {
-      throw new Error("Invalid OTP format");
-    }
-    
-    // In production, you would check against stored OTP
-    // For development, we'll accept any 6-digit OTP
-    console.log(`OTP verified for ${phone}: ${otp}`);
-    
-    // Find user by phone
-    const user = await User.findOne({ where: { phone_number: phone } });
-    if (!user) {
-      throw new Error("User not found");
-    }
-    
-    // Generate token
-    const token = authService.generateToken({ id: user.id });
+
+    const result = await authService.updatePassword(userId, oldPassword, newPassword);
     
     res.status(200).json({
       success: true,
-      message: "OTP verified successfully",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone_number: user.phone_number
-      }
+      message: result.message
     });
   } catch (err) {
-    console.error("OTP verification error:", err.message);
-    res.status(400).json({ error: err.message });
-  }
-}
-
-/**
- * CHECK USER EXISTS CONTROLLER
- */
-export async function checkUserExistsController(req, res) {
-  try {
-    const { phone } = req.body;
-    
-    if (!phone) {
-      throw new Error("Phone number is required");
-    }
-    
-    const user = await User.findOne({ where: { phone_number: phone } });
-    
-    res.status(200).json({
-      exists: !!user,
-      message: user ? "User exists" : "User not found"
-    });
-  } catch (err) {
-    console.error("Check user exists error:", err.message);
+    console.error("Update password error:", err.message);
     res.status(400).json({ error: err.message });
   }
 }
