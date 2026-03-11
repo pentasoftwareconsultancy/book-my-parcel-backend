@@ -5,7 +5,19 @@ import fs from "fs";
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = path.join("uploads", "parcels");
+    const uploadPath = path.join("uploads", "parcels","profile_pictures");
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+// Configure multer storage for profile photos
+const profileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = path.join("uploads", "profiles");
     fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },
@@ -21,9 +33,12 @@ const fileFilter = (req, file, cb) => {
 };
 
 export const upload = multer({ storage, fileFilter });
+export const uploadProfile = multer({ storage: profileStorage, fileFilter });
 
 // Helper to return array of uploaded file paths
 export async function uploadFiles(files) {
   if (!files || files.length === 0) return [];
   return files.map((file) => `/uploads/parcels/${file.filename}`);
 }
+
+

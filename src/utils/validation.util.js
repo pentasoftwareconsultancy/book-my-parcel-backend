@@ -170,14 +170,9 @@ export const checkDuplicateEmail = async (email, userId = null) => {
     },
   });
 
-  const travellerExists = await TravellerProfile.findOne({
-    where: {
-      email,
-      ...(userId && { user_id: { [Op.ne]: userId } }),
-    },
-  });
+  
 
-  if (userExists || travellerExists) {
+  if (userExists ) {
     throw new Error("Email already exists");
   }
 };
@@ -191,14 +186,9 @@ export const checkDuplicatePhone = async (phone, userId = null) => {
     },
   });
 
-  const travellerExists = await TravellerProfile.findOne({
-    where: {
-      phone_number: phone,
-      ...(userId && { user_id: { [Op.ne]: userId } }),
-    },
-  });
+  
 
-  if (userExists || travellerExists) {
+  if (userExists ) {
     throw new Error("Phone number already exists");
   }
 };

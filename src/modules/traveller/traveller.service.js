@@ -1,367 +1,413 @@
+
+import { Op } from "sequelize";
 import TravellerKYC from "./travellerKYC.model.js";
-import User from "../user/user.model.js";
-import { KYC_STATUS } from "../../utils/constants.js";
 import TravellerRoute from "./travellerRoute.model.js";
 import TravellerProfile from "./travellerProfile.model.js";
-/* SUBMIT / UPDATE KYC */
-export const submitKYC = async (userId, body, files) => {
-
-  delete body.status; // prevent manual status override
-
-// Validate Aadhar
-if (body.aadhar_number) {
-  const cleaned = body.aadhar_number.replace(/\s/g, '');
-  if (!/^\d{12}$/.test(cleaned) && !cleaned.includes('X')) {
-    throw new Error("Invalid Aadhar number format. Must be 12 digits.");
-  }
-  body.aadhar_number = cleaned;
-}
-
-// Validate PAN
-if (body.pan_number) {
-  const cleaned = body.pan_number.replace(/\s/g, '').toUpperCase();
-  if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleaned) && !cleaned.includes('X')) {
-    throw new Error("Invalid PAN format. Must be like ABCDE1234F.");
-  }
-  body.pan_number = cleaned;
-}
+import TravellerTrip from "./travellerTrip.model.js";
+import User from "../user/user.model.js";
+import UserProfile from "../user/userProfile.model.js";
+import Booking from "../booking/booking.model.js";
+import Parcel from "../parcel/parcel.model.js";
+import Address from "../parcel/address.model.js";
+import { KYC_STATUS } from "../../utils/constants.js";
 
 
-  const payload = {
-    user_id: userId,
-    ...body,
-
-    aadhar_front: files?.aadharFront?.[0]?.path,
-    aadhar_back: files?.aadharBack?.[0]?.path,
-    pan_front: files?.panFront?.[0]?.path,
-    pan_back: files?.panBack?.[0]?.path,
-    driving_photo: files?.drivingPhoto?.[0]?.path,
-    selfie: files?.selfie?.[0]?.path,
-
-    status: KYC_STATUS.PENDING
-  };
-
-  const existing = await TravellerKYC.findOne({
-    where: { user_id: userId }
-  });
-
-  if (existing) {
-
-    if (existing.status === KYC_STATUS.APPROVED) {
-      throw new Error("Approved KYC cannot be modified");
-    }
-
-    await existing.update(payload);
-    return existing;
-  }
-
-  return await TravellerKYC.create(payload);
-};
+/* ─────────────────────────────
+   SUBMIT KYC
+───────────────────────────── */
 
 
 
-/* GET MY KYC */
-export const getMyKYC = async (userId) => {
-  return await TravellerKYC.findOne({
-    where: { user_id: userId }
-  });
-};
+/* ─────────────────────────────
+   GET MY KYC
+───────────────────────────── */
+// export const getMyKYC = async (userId) => {
+//   return await TravellerKYC.findOne({ where: { user_id: userId } });
+// };
 
-/* GET ALL KYC (ADMIN) */
+
+/* ─────────────────────────────
+   GET ALL KYC (ADMIN)
+───────────────────────────── */
 export const getAllKYCs = async () => {
   return await TravellerKYC.findAll({
-    order: [["createdAt", "DESC"]]
+    order: [["createdAt", "DESC"]],
   });
 };
 
-/* FULL UPDATE KYC (Traveller) */
-export const updateTravellerKYC = async (userId, body, files) => {
 
-  const existing = await TravellerKYC.findOne({
-    where: { user_id: userId }
-  });
+/* ─────────────────────────────
+   UPDATE KYC (Traveller)
+───────────────────────────── */
+// export const updateTravellerKYC = async (userId, body, files) => {
 
-  if (!existing) {
-    throw new Error("KYC record not found");
-  }
+//   const existing = await TravellerKYC.findOne({ where: { user_id: userId } });
+//   if (!existing) throw new Error("KYC record not found");
+//   if (existing.status === KYC_STATUS.APPROVED) {
+//     throw new Error("Approved KYC cannot be modified");
+//   }
 
-  if (existing.status === KYC_STATUS.APPROVED) {
-    throw new Error("Approved KYC cannot be modified");
-  }
+//   const payload = { ...body, status: KYC_STATUS.PENDING };
 
-  const payload = {
-    ...body,
-    status: KYC_STATUS.PENDING
-  };
+//   if (files?.aadharFront)  payload.aadhar_front  = files.aadharFront[0].path;
+//   if (files?.aadharBack)   payload.aadhar_back   = files.aadharBack[0].path;
+//   if (files?.panFront)     payload.pan_front     = files.panFront[0].path;
+//   if (files?.panBack)      payload.pan_back      = files.panBack[0].path;
+//   if (files?.drivingPhoto) payload.driving_photo = files.drivingPhoto[0].path;
+//   if (files?.selfie)       payload.selfie        = files.selfie[0].path;
 
-  // Update all file fields (if provided)
-  if (files?.aadharFront)
-    payload.aadhar_front = files.aadharFront[0].path;
-
-  if (files?.aadharBack)
-    payload.aadhar_back = files.aadharBack[0].path;
-
-  if (files?.panFront)
-    payload.pan_front = files.panFront[0].path;
-
-  if (files?.panBack)
-    payload.pan_back = files.panBack[0].path;
-
-  if (files?.drivingPhoto)
-    payload.driving_photo = files.drivingPhoto[0].path;
-
-  if (files?.selfie)
-    payload.selfie = files.selfie[0].path;
-
-  await existing.update(payload);
-
-  return existing;
-};
+//   await existing.update(payload);
+//   return existing;
+// };
 
 
-/* UPDATE STATUS (ADMIN ONLY — controller already checks role) */
+/* ─────────────────────────────
+   UPDATE KYC STATUS (ADMIN)
+───────────────────────────── */
 export const updateKYCStatus = async (kycId, status) => {
 
   const kyc = await TravellerKYC.findByPk(kycId);
+  if (!kyc) throw new Error("KYC record not found");
 
-  if (!kyc) {
-    throw new Error("KYC record not found");
-  }
-
-  const validStatuses = Object.values(KYC_STATUS);
-
-  if (!validStatuses.includes(status)) {
+  if (!Object.values(KYC_STATUS).includes(status)) {
     throw new Error("Invalid status value");
   }
 
   await kyc.update({ status });
-
   return kyc;
 };
 
-/**
- * GET NEARBY TRAVELERS
- * Fetch travelers with approved KYC within a certain distance
- */
-export const getNearbyTravelers = async (pickupCity, deliveryCity, options = {}) => {
-  const { page = 1, limit = 10, vehicleType = null } = options;
-  const offset = (page - 1) * limit;
 
-  // Build where clause for filtering
-  let whereClause = {
-    status: KYC_STATUS.APPROVED
-  };
+/* ─────────────────────────────
+   GET NEARBY TRAVELERS
+───────────────────────────── */
+// export const getNearbyTravelers = async (pickupCity, deliveryCity, options = {}) => {
 
-  // If we have specific cities, we could filter by them
-  // For now, we'll fetch all approved travelers
+//   const { page = 1, limit = 10, vehicleType = null } = options; // ✅ from options
+//   const offset = (page - 1) * limit;
 
-  try {
-    const { count, rows: kycRecords } = await TravellerKYC.findAndCountAll({
-      where: whereClause,
-      include: [{
-        model: User,
-        as: 'User',
-        attributes: ['id', 'name', 'city', 'state', 'is_active', 'is_verified']
-      }],
-      limit,
-      offset,
-      order: [['created_at', 'DESC']]
-    });
+//   const whereClause = { status: KYC_STATUS.APPROVED };
 
-    // Transform the data to match frontend expectations
-    const travelers = kycRecords.map(kyc => {
-      const user = kyc.User;
-      return {
-        id: user.id,
-        name: user.name,
-        verified: user.is_verified,
-        rating: Math.random() * (5.0 - 4.0) + 4.0, // Mock rating between 4.0-5.0
-        reviews: Math.floor(Math.random() * 500) + 50, // Mock reviews 50-550
-        trips: Math.floor(Math.random() * 400) + 20, // Mock trips 20-420
-        avgResponse: `${Math.floor(Math.random() * 20) + 5} min`, // Mock response time 5-25 min
-        deliveryTag: Math.random() > 0.5 ? "Today" : "Tomorrow",
-        from: pickupCity || user.city || "City",
-        to: deliveryCity || "Destination",
-        vehicleType: vehicleType || ["Car", "Bike", "Mini Truck"][Math.floor(Math.random() * 3)],
-        duration: `${Math.floor(Math.random() * 3) + 3}–${Math.floor(Math.random() * 3) + 4} hours`,
-        price: Math.floor(Math.random() * 100) + 80, // Mock price 80-180
-        avatarBg: ["bg-gradient-to-br from-[#FFB347] to-[#FF6B6B]", "bg-gradient-to-br from-[#FF9AEB] to-[#FF6FD8]", "bg-gradient-to-br from-[#FFC371] to-[#FF5F6D]"][Math.floor(Math.random() * 3)],
-        mapX: `${Math.floor(Math.random() * 60) + 20}%`, // Mock position 20-80%
-        mapY: `${Math.floor(Math.random() * 50) + 25}%` // Mock position 25-75%
-      };
-    });
+//   try {
+//     const { count, rows: kycRecords } = await TravellerKYC.findAndCountAll({
+//       where: whereClause,
+//       include: [{
+//         model: User,
+//         as: "User",
+//         attributes: ["id", "phone_number", "is_active"],
+//         include: [{
+//           model: UserProfile,
+//           as: "profile",
+//           attributes: ["name", "city", "state"],
+//         }],
+//       }],
+//       limit:  Number(limit),
+//       offset: Number(offset),
+//       order:  [["createdAt", "DESC"]],
+//     });
 
-    return {
-      travelers,
-      pagination: {
-        total: count,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(count / limit)
-      }
-    };
-  } catch (error) {
-    throw new Error(`Failed to fetch nearby travelers: ${error.message}`);
+//     const travelers = kycRecords.map(kyc => {
+//       const user = kyc.User;
+//       return {
+//         id:          user.id,
+//         name:        user.profile?.name  || "Unknown",
+//         city:        user.profile?.city  || "",
+//         state:       user.profile?.state || "",
+//         verified:    user.is_active,
+//         rating:      (Math.random() * (5.0 - 4.0) + 4.0).toFixed(1),
+//         reviews:     Math.floor(Math.random() * 500) + 50,
+//         trips:       Math.floor(Math.random() * 400) + 20,
+//         avgResponse: `${Math.floor(Math.random() * 20) + 5} min`,
+//         deliveryTag: Math.random() > 0.5 ? "Today" : "Tomorrow",
+//         from:        pickupCity   || user.profile?.city || "City", // ✅ pickupCity from param
+//         to:          deliveryCity || "Destination",                // ✅ deliveryCity from param
+//         vehicleType: vehicleType  || ["Car", "Bike", "Mini Truck"][Math.floor(Math.random() * 3)],
+//         duration:    `${Math.floor(Math.random() * 3) + 3}–${Math.floor(Math.random() * 3) + 4} hours`,
+//         price:       Math.floor(Math.random() * 100) + 80,
+//       };
+//     });
+
+//     return {
+//       travelers,
+//       pagination: {
+//         total:      count,
+//         page:       Number(page),
+//         limit:      Number(limit),
+//         totalPages: Math.ceil(count / Number(limit)),
+//       },
+//     };
+
+//   } catch (error) {
+//     throw new Error(`Failed to fetch nearby travelers: ${error.message}`);
+//   }
+// };
+
+
+/* ─────────────────────────────
+   FETCH TRAVELLER DELIVERIES  ✅ NEW
+───────────────────────────── */
+export async function fetchTravellerDeliveries(travellerUserId, query) {
+
+  const { status, page = 1, limit = 10 } = query;
+
+  // ✅ Fix status — convert comma string to array
+  const whereClause = { traveller_id: travellerUserId };
+  if (status) {
+    const statusArray = status.split(",").map(s => s.trim());
+    whereClause.status = { [Op.in]: statusArray };
   }
-};
 
-
-
-
-// Route Service
-
-/* CREATE ROUTE */
-export const createRoute = async (userId, body) => {
-  // Find traveller profile
-  const profile = await TravellerProfile.findOne({
-    where: { user_id: userId }
+  const { count, rows: bookings } = await Booking.findAndCountAll({
+    where: whereClause,
+    include: [
+      {
+        model: Parcel,
+        as: "parcel",
+        required: true,
+        include: [
+          {
+            model: Address,
+            as: "pickupAddress",
+            attributes: ["city", "address", "state"],
+          },
+          {
+            model: Address,
+            as: "deliveryAddress",
+            attributes: ["city", "address", "state"],
+          },
+          {
+            model: User,
+            as: "user",                        // ✅ parcel owner = sender
+            attributes: ["id", "phone_number"],
+            include: [{
+              model: UserProfile,
+              as: "profile",
+              attributes: ["name"],            // ✅ name from user_profiles
+            }],
+          },
+        ],
+      },
+    ],
+    order: [["createdAt", "DESC"]],
+    limit:  parseInt(limit),
+    offset: (parseInt(page) - 1) * parseInt(limit),
   });
 
+  const deliveries = bookings.map(booking => {
+    const parcel = booking.parcel;
+    const sender = parcel?.user; // ✅ sender = parcel owner
+
+    return {
+      id:         booking.id,
+      bookingId:  `BMP${booking.id.substring(0, 8).toUpperCase()}`,
+      trackingId: `BMP${booking.id.substring(0, 12).toUpperCase()}`,
+      status:     booking.status,
+      customer:   sender?.profile?.name || "Unknown Customer", // ✅ fixed
+      pickup: {
+        city:    parcel?.pickupAddress?.city    || "",
+        address: parcel?.pickupAddress?.address || "",
+        state:   parcel?.pickupAddress?.state   || "",
+      },
+      drop: {
+        city:    parcel?.deliveryAddress?.city    || "",
+        address: parcel?.deliveryAddress?.address || "",
+        state:   parcel?.deliveryAddress?.state   || "",
+      },
+      amount:     parcel?.price_quote || 0,
+      bookedDate: booking.createdAt.toLocaleDateString("en-US", {
+        month: "short",
+        day:   "numeric",
+        year:  "numeric",
+      }),
+      package: {
+        size:   parcel?.package_size || "",
+        weight: `${parcel?.weight} kg`,
+      },
+    };
+  });
+
+  return {
+    deliveries,
+    pagination: {
+      total:      count,
+      page:       parseInt(page),
+      limit:      parseInt(limit),
+      totalPages: Math.ceil(count / parseInt(limit)),
+    },
+  };
+}
+
+
+/* ─────────────────────────────
+   FETCH TRAVELLER STATS  ✅ NEW
+───────────────────────────── */
+export async function fetchTravellerStats(travellerUserId) {
+
+  // ✅ Single query — get all bookings with parcel price
+  const bookings = await Booking.findAll({
+    where: { traveller_id: travellerUserId },
+    attributes: ["id", "status"],
+    include: [{
+      model: Parcel,
+      as: "parcel",
+      attributes: ["price_quote"],
+      required: false,
+    }],
+  });
+
+  const stats = {
+    totalDeliveries: bookings.length,
+    active:          0,
+    completed:       0,
+    cancelled:       0,
+    totalEarnings:   0,
+    rating:          4.8, // static for now
+  };
+
+  bookings.forEach(booking => {
+    const status = booking.status;
+    if (["CREATED", "MATCHING", "CONFIRMED", "IN_TRANSIT"].includes(status)) {
+      stats.active += 1;
+    } else if (status === "DELIVERED") {
+      stats.completed     += 1;
+      stats.totalEarnings += booking.parcel?.price_quote || 0;
+    } else if (status === "CANCELLED") {
+      stats.cancelled += 1;
+    }
+  });
+
+  return stats;
+}
+
+
+/* ─────────────────────────────
+   ROUTE SERVICES
+───────────────────────────── */
+
+export const createRoute = async (userId, body) => {
+  const profile = await TravellerProfile.findOne({ where: { user_id: userId } });
   if (!profile) {
     throw new Error("Traveller profile not found. Please complete your profile first.");
   }
 
-  // Create route
-  const route = await TravellerRoute.create({
-    traveller_profile_id: profile.id,
-    origin_city: body.originCity,
-    origin_state: body.originState,
-    stops: body.stops || [],
-    destination_city: body.destinationCity,
-    destination_state: body.destinationState,
-    departure_date: body.departureDate,
-    departure_time: body.departureTime,
-    arrival_date: body.arrivalDate,
-    arrival_time: body.arrivalTime,
-    is_recurring: body.isRecurring || false,
-    recurring_days: body.recurringDays || [],
-    vehicle_type: body.vehicleType,
-    vehicle_number: body.vehicleNumber,
-    max_weight_kg: body.maxWeightKg,
+  return await TravellerRoute.create({
+    traveller_profile_id:        profile.id,
+    origin_city:                 body.originCity,
+    origin_state:                body.originState,
+    stops:                       body.stops || [],
+    destination_city:            body.destinationCity,
+    destination_state:           body.destinationState,
+    departure_date:              body.departureDate,
+    departure_time:              body.departureTime,
+    arrival_date:                body.arrivalDate,
+    arrival_time:                body.arrivalTime,
+    is_recurring:                body.isRecurring || false,
+    recurring_days:              body.recurringDays || [],
+    vehicle_type:                body.vehicleType,
+    vehicle_number:              body.vehicleNumber,
+    max_weight_kg:               body.maxWeightKg,
     available_space_description: body.availableSpaceDescription,
-    accepted_parcel_types: body.acceptedParcelTypes || [],
-    min_earning_per_delivery: body.minEarningPerDelivery,
+    accepted_parcel_types:       body.acceptedParcelTypes || [],
+    min_earning_per_delivery:    body.minEarningPerDelivery,
   });
-
-  return route;
 };
 
-/* GET MY ROUTES */
+
 export const getMyRoutes = async (userId, options = {}) => {
   const { status, page = 1, limit = 10 } = options;
   const offset = (page - 1) * limit;
 
-  // Find traveller profile
-  const profile = await TravellerProfile.findOne({
-    where: { user_id: userId }
-  });
-
+  const profile = await TravellerProfile.findOne({ where: { user_id: userId } });
   if (!profile) {
     return { routes: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } };
   }
 
-  // Build where clause
   const whereClause = { traveller_profile_id: profile.id };
-  if (status) {
-    whereClause.status = status;
-  }
+  if (status) whereClause.status = status;
 
   const { count, rows: routes } = await TravellerRoute.findAndCountAll({
     where: whereClause,
-    limit: parseInt(limit),
+    limit:  parseInt(limit),
     offset: parseInt(offset),
-    order: [['created_at', 'DESC']]
+    order:  [["createdAt", "DESC"]],
   });
 
   return {
     routes,
     pagination: {
-      total: count,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(count / limit)
-    }
+      total:      count,
+      page:       parseInt(page),
+      limit:      parseInt(limit),
+      totalPages: Math.ceil(count / limit),
+    },
   };
 };
 
-/* GET ROUTE BY ID */
+
 export const getRouteById = async (routeId) => {
   const route = await TravellerRoute.findByPk(routeId, {
     include: [{
       model: TravellerProfile,
-      as: 'travellerProfile',
+      as: "travellerProfile",
       include: [{
         model: User,
-        as: 'user',
-        attributes: ['id', 'name', 'phone_number']
-      }]
-    }]
+        as: "user",
+        attributes: ["id", "phone_number"],      // ✅ no name from users
+        include: [{
+          model: UserProfile,
+          as: "profile",
+          attributes: ["name"],                  // ✅ name from user_profiles
+        }],
+      }],
+    }],
   });
 
-  if (!route) {
-    throw new Error("Route not found");
-  }
-
+  if (!route) throw new Error("Route not found");
   return route;
 };
 
-/* UPDATE ROUTE */
+
 export const updateRoute = async (routeId, userId, body) => {
   const route = await TravellerRoute.findByPk(routeId, {
-    include: [{
-      model: TravellerProfile,
-      as: 'travellerProfile'
-    }]
+    include: [{ model: TravellerProfile, as: "travellerProfile" }],
   });
 
-  if (!route) {
-    throw new Error("Route not found");
-  }
-
-  // Verify ownership
+  if (!route) throw new Error("Route not found");
   if (route.travellerProfile.user_id !== userId) {
     throw new Error("Unauthorized to update this route");
   }
 
-  // Update route
   await route.update({
-    origin_city: body.originCity,
-    origin_state: body.originState,
-    stops: body.stops,
-    destination_city: body.destinationCity,
-    destination_state: body.destinationState,
-    departure_date: body.departureDate,
-    departure_time: body.departureTime,
-    arrival_date: body.arrivalDate,
-    arrival_time: body.arrivalTime,
-    is_recurring: body.isRecurring,
-    recurring_days: body.recurringDays,
-    vehicle_type: body.vehicleType,
-    vehicle_number: body.vehicleNumber,
-    max_weight_kg: body.maxWeightKg,
+    origin_city:                 body.originCity,
+    origin_state:                body.originState,
+    stops:                       body.stops,
+    destination_city:            body.destinationCity,
+    destination_state:           body.destinationState,
+    departure_date:              body.departureDate,
+    departure_time:              body.departureTime,
+    arrival_date:                body.arrivalDate,
+    arrival_time:                body.arrivalTime,
+    is_recurring:                body.isRecurring,
+    recurring_days:              body.recurringDays,
+    vehicle_type:                body.vehicleType,
+    vehicle_number:              body.vehicleNumber,
+    max_weight_kg:               body.maxWeightKg,
     available_space_description: body.availableSpaceDescription,
-    accepted_parcel_types: body.acceptedParcelTypes,
-    min_earning_per_delivery: body.minEarningPerDelivery,
-    status: body.status,
+    accepted_parcel_types:       body.acceptedParcelTypes,
+    min_earning_per_delivery:    body.minEarningPerDelivery,
+    status:                      body.status,
   });
 
   return route;
 };
 
-/* DELETE ROUTE */
+
 export const deleteRoute = async (routeId, userId) => {
   const route = await TravellerRoute.findByPk(routeId, {
-    include: [{
-      model: TravellerProfile,
-      as: 'travellerProfile'
-    }]
+    include: [{ model: TravellerProfile, as: "travellerProfile" }],
   });
 
-  if (!route) {
-    throw new Error("Route not found");
-  }
-
-  // Verify ownership
+  if (!route) throw new Error("Route not found");
   if (route.travellerProfile.user_id !== userId) {
     throw new Error("Unauthorized to delete this route");
   }

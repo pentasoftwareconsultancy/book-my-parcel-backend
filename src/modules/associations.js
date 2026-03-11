@@ -57,7 +57,7 @@ Role.belongsToMany(User, {
 /* ===========================
    USER ↔ USER PROFILE (1–1)
    =========================== */
-User.hasOne(UserProfile, { foreignKey: "user_id", onDelete: "CASCADE" , as:"profile" });
+User.hasOne(UserProfile, { foreignKey: "user_id", onDelete: "CASCADE", as: "profile" });
 UserProfile.belongsTo(User, { foreignKey: "user_id" });
 
 /* ===========================
@@ -103,7 +103,7 @@ Parcel.hasOne(Booking, {
 });
 Booking.belongsTo(Parcel, {
   foreignKey: "parcel_id",
-  as:"parcel"
+  as: "parcel"
 });
 
 /* ===========================
@@ -115,7 +115,7 @@ TravellerTrip.hasMany(Booking, {
 });
 Booking.belongsTo(TravellerTrip, {
   foreignKey: "trip_id",
-  as:"traveller_trip"
+  as: "traveller_trip"
 });
 
 /* ===========================
@@ -227,92 +227,29 @@ Parcel.belongsTo(Address, { as: "deliveryAddress", foreignKey: "delivery_address
 
 
 
-// /* ===========================
-//    USER ↔ ADDRESS (1–N)
-//    =========================== */
-// User.hasMany(Address, {
-//   foreignKey: "user_id",
-//   onDelete: "CASCADE",
-// });
-// Address.belongsTo(User, {
-//   foreignKey: "user_id",
-// });
-
-// /* ===========================
-//    BOOKING ↔ PICKUP ADDRESS
-//    =========================== */
-// Booking.belongsTo(Address, {
-//   foreignKey: "pickup_address_id",
-//   as: "pickupAddress",
-// });
-
-// Address.hasMany(Booking, {
-//   foreignKey: "pickup_address_id",
-//   as: "pickupBookings",
-// });
-
-// /* ===========================
-//    BOOKING ↔ DELIVERY ADDRESS
-//    =========================== */
-// Booking.belongsTo(Address, {
-//   foreignKey: "delivery_address_id",
-//   as: "deliveryAddress",
-// });
-
-// Address.hasMany(Booking, {
-//   foreignKey: "delivery_address_id",
-//   as: "deliveryBookings",
-// });
-
-// /* ===========================
-//    USER (SENDER) ↔ BOOKING (1–N)
-//    =========================== */
-// User.hasMany(Booking, {
-//   foreignKey: "user_id",
-//   as: "senderBookings",
-// });
-
-// Booking.belongsTo(User, {
-//   foreignKey: "user_id",
-//   as: "sender",
-//   onDelete: "CASCADE",
-// });
-
-// //* ===========================
-// //   Booking status log - who changed the status
-// //   =========================== */
-
-// // BookingStatusLog.belongsTo(User, {
-// //   foreignKey: "changed_by",
-// //   as: "changedBy",
-// // });
-
-// // User.hasMany(BookingStatusLog, {
-// //   foreignKey: "changed_by",
-// //   as: "statusChanges",
-// // });
 
 
 
-export { 
-  User, 
-  Role, 
-  UserRole, 
-  UserProfile, 
-  TravellerProfile, 
-  TravellerTrip, 
-  AadhaarVerification, 
-  TravellerKYC, 
-  Parcel, 
-  ParcelProof, 
-  Booking, 
-  BookingStatusLog, 
-  Payment, 
-  Wallet, 
-  WalletTransaction, 
-  Refund, 
-  ParcelTracking, 
-  Address 
+
+export {
+  User,
+  Role,
+  UserRole,
+  UserProfile,
+  TravellerProfile,
+  TravellerTrip,
+  AadhaarVerification,
+  TravellerKYC,
+  Parcel,
+  ParcelProof,
+  Booking,
+  BookingStatusLog,
+  Payment,
+  Wallet,
+  WalletTransaction,
+  Refund,
+  ParcelTracking,
+  Address
 };
 
 

@@ -10,10 +10,10 @@ import { KYC_STATUS, ROLES } from "../../utils/constants.js";
 import { generateToken } from "../../utils/jwt.util.js";
 import {
   validateSignupData,
-  // validateEmail,
-  // validatePhone,
-  // checkDuplicateEmail,
-  // checkDuplicatePhone
+  validateEmail,
+  validatePhone,
+  checkDuplicateEmail,
+  checkDuplicatePhone
 } from "../../utils/validation.util.js";
 
 export { generateToken };
@@ -186,4 +186,161 @@ export async function login(email, password, loginRole) {
     roles:      dbRoles,
     kycStatus:  user.travellerKYC?.status || KYC_STATUS.NOT_STARTED,
   };
+}
+
+
+/**
+ * GET PROFILE
+ */
+export async function getUserProfile(userId) {
+  const user = await User.findByPk(userId, {
+    include: [
+      { model: UserProfile, as: "profile" },
+      { model: TravellerProfile, as: "travellerProfile" },
+      { model: Role, as: "roles", through: { attributes: [] } },
+      { model: TravellerKYC, as: "travellerKYC" }
+    ],
+  });
+
+  if (!user) throw new Error("User not found");
+
+  return {
+    user,
+    roles: user.roles.map(r => r.name),
+    kycStatus: user.travellerKYC?.status || KYC_STATUS.NOT_STARTED
+  };
+}
+
+
+
+
+/**
+ * UPDATE PROFILE 
+ */
+
+export async function updateProfile(userId, updateData) {
+  const user = await User.findByPk(userId);
+  console.log("Updating profile for user:", userId, "with data:", updateData); // Debug log
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // 🔥 EMAIL VALIDATION
+  if (updateData.email && updateData.email !== user.email) {
+    validateEmail(updateData.email);
+    await checkDuplicateEmail(updateData.email, userId);
+  }
+
+  console.log("Email validation passed"); // Debug log
+
+  // 🔥 PHONE VALIDATION
+  if (
+    updateData.phone_number &&
+    updateData.phone_number !== user.phone_number
+  ) {
+    validatePhone(updateData.phone_number);
+    await checkDuplicatePhone(updateData.phone_number, userId);
+  }
+  console.log("Phone validation passed"); // Debug log
+
+  // 1. Update USER table (only authentication fields)
+  await user.update({
+    email: updateData.email ?? user.email,
+    phone_number: updateData.phone_number ?? user.phone_number,
+    alternate_phone: updateData.alternate_phone ?? user.alternate_phone,
+  });
+
+  console.log("User table updated"); // Debug log
+  // 2. Update UserProfile table (personal info)
+  const userProfile = await UserProfile.findOne({
+    where: { user_id: userId },
+  });
+  console.log("UserProfile found:", !!userProfile); // Debug log
+
+  if (userProfile) {
+    await userProfile.update({
+      name: updateData.name ?? userProfile.name,
+      address: updateData.address ?? userProfile.address,
+      city: updateData.city ?? userProfile.city,
+      state: updateData.state ?? userProfile.state,
+      pincode: updateData.pincode ?? userProfile.pincode,
+      avatar_url: updateData.avatar_url ?? userProfile.avatar_url,
+    });
+  }
+
+  console.log("UserProfile updated"); // Debug log
+
+  // 3. Update TravellerProfile table (vehicle info)
+  const travellerProfile = await TravellerProfile.findOne({
+    where: { user_id: userId },
+  });
+
+  if (travellerProfile) {
+    await travellerProfile.update({
+      vehicle_type: updateData.vehicle_type ?? travellerProfile.vehicle_type,
+      vehicle_number: updateData.vehicle_number ?? travellerProfile.vehicle_number,
+      vehicle_model: updateData.vehicle_model ?? travellerProfile.vehicle_model,
+      capacity_kg: updateData.capacity_kg ?? travellerProfile.capacity_kg,
+      status: updateData.status ?? travellerProfile.status,
+      is_available: updateData.is_available ?? travellerProfile.is_available,
+    });
+  }
+  console.log("TravellerProfile updated"); // Debug log
+
+  return {
+    user,
+    userProfile: userProfile || null,
+    travellerProfile: travellerProfile || null,
+  };
+}
+
+/**
+ * UPLOAD/UPDATE PROFILE PHOTO
+ */
+export async function uploadProfilePhoto(userId, file) {
+  if (!file) {
+    throw new Error("No file provided");
+  }
+
+  const userProfile = await UserProfile.findOne({
+    where: { user_id: userId }
+  });
+
+  if (!userProfile) {
+    throw new Error("User profile not found");
+  }
+
+  const photoPath = `/uploads/profiles/${file.filename}`;
+  
+  await userProfile.update({ avatar_url: photoPath });
+
+  return { avatar_url: photoPath };
+}
+
+/**
+ * UPDATE PASSWORD
+ */
+export async function updatePassword(userId, oldPassword, newPassword) {
+  const user = await User.findByPk(userId, {
+    attributes: { include: ["password"] }
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const match = await bcrypt.compare(oldPassword, user.password);
+  if (!match) {
+    throw new Error("Current password is incorrect");
+  }
+
+  if (newPassword.length < 6) {
+    throw new Error("New password must be at least 6 characters");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await user.update({ password: hashedPassword });
+
+  return { message: "Password updated successfully" };
 }
