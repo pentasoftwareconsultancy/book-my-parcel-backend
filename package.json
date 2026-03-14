@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon server.js"
+    "start": "nodemon server.js",
+    "verify": "node verify-phase1-setup.js",
+    "fix": "node fix-phase1-issues.js",
+    "test:geocoding": "node test-geocoding.js",
+    "test:validation": "node test-validation-api.js"
   },
   "keywords": [],
   "author": "",
@@ -18,7 +22,9 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-validator": "^7.3.1",
     "fs": "^0.0.1-security",
+    "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "nodemon": "^3.1.11",

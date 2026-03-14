@@ -25,7 +25,8 @@ const Parcel = sequelize.define(
     width: { type: DataTypes.FLOAT },
     height: { type: DataTypes.FLOAT },
     description: { type: DataTypes.TEXT },
-    parcel_type: { type: DataTypes.STRING },
+    // Values: 'SHORT_DISTANCE' | 'LONG_DISTANCE' (set by route calculation, enforced at app level)
+    parcel_type: { type: DataTypes.STRING, allowNull: true },
     value: { type: DataTypes.FLOAT },
     notes: { type: DataTypes.TEXT },
     photos: { type: DataTypes.JSON },
@@ -33,6 +34,13 @@ const Parcel = sequelize.define(
     delivery_address_id: { type: DataTypes.UUID, allowNull: false },
     selected_partner_id: { type: DataTypes.UUID },
     price_quote: { type: DataTypes.FLOAT },
+
+    // --- Route data (populated after geocoding both addresses) ---
+    route_distance_km:       { type: DataTypes.FLOAT, allowNull: true },
+    route_duration_minutes:  { type: DataTypes.FLOAT, allowNull: true },
+    intermediate_cities:     { type: DataTypes.JSONB, allowNull: true },
+    route_geometry:          { type: DataTypes.TEXT, allowNull: true },
+
     status: {
       type: DataTypes.ENUM(
         "CREATED",

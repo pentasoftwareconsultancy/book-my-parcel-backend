@@ -5,6 +5,7 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import parcelRoutes from "./modules/parcel/parcel.routes.js"
 import userRoutes from "./modules/user/user.routes.js";
 import travellerRoutes from "./modules/traveller/traveller.routes.js";
+import placesRoutes from "./modules/places/places.routes.js";
 
 const router = express.Router();
 
@@ -12,6 +13,7 @@ const router = express.Router();
 router.use("/auth", authRoutes); // /api/auth/...
 // router.use("/booking", bookingRoutes); // /api/booking/
 router.use("/parcel", parcelRoutes); // /api/parcel/
+router.use("/places", placesRoutes); // /api/places/autocomplete
 router.use("/user", userRoutes); // /api/user/...
 
 

@@ -1,7 +1,12 @@
 import express from "express";
-import { createParcel, getParcelById,getUserRequests } from "./parcel.controller.js";
+import { createParcel, getParcelById, getUserRequests } from "./parcel.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { upload } from "../../utils/fileUpload.util.js";
+import {
+  validateRequest,
+  parseJsonFields,
+  parcelRequestSchema,
+} from "../../middlewares/validation.middleware.js";
 
 const router = express.Router();
 
@@ -9,7 +14,9 @@ const router = express.Router();
 router.post(
   "/request",
   authMiddleware,
-  upload.array("parcel_photos", 3), // max 3 photos
+  upload.array("parcel_photos", 3),         // multer must run before validation
+  parseJsonFields("pickup_address", "delivery_address"), // parse JSON strings from multipart
+  validateRequest(parcelRequestSchema),
   createParcel
 );
 
