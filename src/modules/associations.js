@@ -205,6 +205,12 @@ TravellerRoute.belongsTo(TravellerProfile, {
   foreignKey: "traveller_profile_id",
   as: "travellerProfile"
 });
+
+// Phase 2: TravellerRoute ↔ Address associations
+TravellerRoute.belongsTo(Address, { as: "originAddress", foreignKey: "origin_address_id" });
+TravellerRoute.belongsTo(Address, { as: "destAddress", foreignKey: "dest_address_id" });
+Address.hasMany(TravellerRoute, { as: "originRoutes", foreignKey: "origin_address_id" });
+Address.hasMany(TravellerRoute, { as: "destRoutes", foreignKey: "dest_address_id" });
 // // travellerkyc
 
 User.hasOne(TravellerKYC, {

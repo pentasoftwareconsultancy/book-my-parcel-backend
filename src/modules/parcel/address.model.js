@@ -4,14 +4,14 @@ import sequelize from "../../config/database.config.js";
 const Address = sequelize.define("address", {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   user_profile_id: { type: DataTypes.UUID, allowNull: true },
-  type: { type: DataTypes.ENUM("pickup", "delivery"), allowNull: false },
-  name: { type: DataTypes.STRING, allowNull: false },
+  type: { type: DataTypes.ENUM("pickup", "delivery", "origin", "destination"), allowNull: false },
+  name: { type: DataTypes.STRING, allowNull: true },
   address: { type: DataTypes.STRING, allowNull: false },
   city: { type: DataTypes.STRING, allowNull: false },
   state: { type: DataTypes.STRING, allowNull: false },
   pincode: { type: DataTypes.STRING, allowNull: false },
   country: { type: DataTypes.STRING, allowNull: false },
-  phone: { type: DataTypes.STRING, allowNull: false },
+  phone: { type: DataTypes.STRING, allowNull: true },
   alt_phone: { type: DataTypes.STRING },
   aadhar_no: { type: DataTypes.STRING },
 

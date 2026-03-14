@@ -1,6 +1,7 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../../config/database.config.js";
 import TravellerProfile from "./travellerProfile.model.js";
+import Address from "../parcel/address.model.js";
 
 const TravellerRoute = sequelize.define(
   "traveller_routes",
@@ -19,30 +20,29 @@ const TravellerRoute = sequelize.define(
       },
       onDelete: "CASCADE",
     },
-    // Form 1: Route Details
-    origin_city: {
-      type: DataTypes.STRING,
+    // Address references (Phase 2: reuse enriched addresses)
+    origin_address_id: {
+      type: DataTypes.UUID,
       allowNull: false,
+      references: {
+        model: Address,
+        key: "id",
+      },
+      onDelete: "RESTRICT",
     },
-    origin_state: {
-      type: DataTypes.STRING,
+    dest_address_id: {
+      type: DataTypes.UUID,
       allowNull: false,
+      references: {
+        model: Address,
+        key: "id",
+      },
+      onDelete: "RESTRICT",
     },
-    stops: {
-      type: DataTypes.JSON,
-      defaultValue: [],
-    },
-    destination_city: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    destination_state: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
+    // Scheduling fields
     departure_date: {
       type: DataTypes.DATEONLY,
-      allowNull: false,
+      allowNull: true, // NULL if recurring
     },
     departure_time: {
       type: DataTypes.TIME,
@@ -50,36 +50,92 @@ const TravellerRoute = sequelize.define(
     },
     arrival_date: {
       type: DataTypes.DATEONLY,
-      allowNull: false,
+      allowNull: true,
     },
     arrival_time: {
       type: DataTypes.TIME,
-      allowNull: false,
+      allowNull: true,
     },
     is_recurring: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
     recurring_days: {
-      type: DataTypes.JSON,
-      defaultValue: [],
+      type: DataTypes.JSONB,
+      allowNull: true,
     },
-    // Form 2: Vehicle & Capacity
+    recurring_start_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+    recurring_end_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+    // Vehicle details
     vehicle_type: {
       type: DataTypes.STRING,
       allowNull: false,
     },
-    vehicle_number: DataTypes.STRING,
-    max_weight_kg: DataTypes.INTEGER,
-    available_space_description: DataTypes.TEXT,
-    // Form 3: Parcel Preferences
-    accepted_parcel_types: {
-      type: DataTypes.JSON,
-      defaultValue: [],
+    vehicle_number: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
-    min_earning_per_delivery: DataTypes.DECIMAL(10, 2),
+    max_weight_kg: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    available_capacity_kg: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0, // Will be set to max_weight_kg on creation
+    },
+    // Parcel preferences
+    accepted_parcel_types: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    min_earning_per_delivery: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+    // Route geometry and metrics (from Google Routes API)
+    route_geometry: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    total_distance_km: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+    total_duration_minutes: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+    // Intermediate location data (for matching)
+    localities_passed: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    pincodes_covered: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    talukas_passed: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    cities_passed: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    landmarks_nearby: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    // Status
     status: {
-      type: DataTypes.ENUM("ACTIVE", "INACTIVE", "COMPLETED"),
+      type: DataTypes.ENUM("ACTIVE", "INACTIVE", "COMPLETED", "CANCELLED"),
       defaultValue: "ACTIVE",
     },
   },

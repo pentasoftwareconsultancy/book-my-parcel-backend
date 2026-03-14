@@ -48,11 +48,12 @@ router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
 router.get("/dashboard/stats",      authMiddleware, ctrl.getTravelerStats);
 
 // ── Routes ───────────────────────────────────
-router.post("/routes",     authMiddleware, validateRoute, ctrl.createRoute);
-router.get("/routes",      authMiddleware, ctrl.getMyRoutes);
-router.get("/routes/:id",  authMiddleware, ctrl.getRouteById);
-router.put("/routes/:id",  authMiddleware, validateRoute, ctrl.updateRoute);
-router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
+// Routes are now handled by travellerRoute.routes.js with proper Joi validation
+// router.post("/routes",     authMiddleware, validateRoute, ctrl.createRoute);
+// router.get("/routes",      authMiddleware, ctrl.getMyRoutes);
+// router.get("/routes/:id",  authMiddleware, ctrl.getRouteById);
+// router.put("/routes/:id",  authMiddleware, validateRoute, ctrl.updateRoute);
+// router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
 
 // ── Trips ─────────────────────────────────────
 // router.post("/trip",     authMiddleware, trip.createTravellerTrip);  
