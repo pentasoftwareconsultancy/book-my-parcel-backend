@@ -36,6 +36,10 @@ import Address from "./parcel/address.model.js";
 import TravellerRoute from "./traveller/travellerRoute.model.js";
 import RoutePlace from "./traveller/routePlace.model.js";
 
+/* MATCHING */
+import ParcelRequest from "./matching/parcelRequest.model.js";
+import ParcelAcceptance from "./matching/parcelAcceptance.model.js";
+
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
    =========================== */
@@ -271,7 +275,33 @@ export {
   ParcelTracking,
   Address,
   TravellerRoute,
-  RoutePlace
+  RoutePlace,
+  ParcelRequest,
+  ParcelAcceptance
 };
 
 
+
+/* ===========================
+   PHASE 3: PARCEL REQUEST & ACCEPTANCE
+   =========================== */
+
+// ParcelRequest ↔ Parcel (N-1)
+ParcelRequest.belongsTo(Parcel, { foreignKey: "parcel_id", as: "parcel" });
+Parcel.hasMany(ParcelRequest, { foreignKey: "parcel_id", as: "requests" });
+
+// ParcelRequest ↔ TravellerRoute (N-1)
+ParcelRequest.belongsTo(TravellerRoute, { foreignKey: "route_id", as: "route" });
+TravellerRoute.hasMany(ParcelRequest, { foreignKey: "route_id", as: "parcelRequests" });
+
+// ParcelAcceptance ↔ ParcelRequest (1-1)
+ParcelAcceptance.belongsTo(ParcelRequest, { foreignKey: "parcel_request_id", as: "request" });
+ParcelRequest.hasOne(ParcelAcceptance, { foreignKey: "parcel_request_id", as: "acceptance" });
+
+// ParcelAcceptance ↔ Parcel (N-1)
+ParcelAcceptance.belongsTo(Parcel, { foreignKey: "parcel_id", as: "parcel" });
+Parcel.hasMany(ParcelAcceptance, { foreignKey: "parcel_id", as: "acceptances" });
+
+// ParcelAcceptance ↔ User (N-1) - for traveller
+ParcelAcceptance.belongsTo(User, { foreignKey: "traveller_id", as: "traveller" });
+User.hasMany(ParcelAcceptance, { foreignKey: "traveller_id", as: "acceptedParcels" });

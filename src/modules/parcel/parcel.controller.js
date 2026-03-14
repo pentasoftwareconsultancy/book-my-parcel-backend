@@ -1,6 +1,8 @@
 import { createParcelRequest } from "./parcel.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
 import { getUserParcelRequests, getParcelById as getServiceParcelById } from "./parcel.service.js";
+import { matchParcelWithTravellers } from "../../services/matchingEngine.service.js";
+import { sendToTraveller } from "../../services/notification.service.js";
 
 export const createParcel = async (req, res) => {
   try {
@@ -8,6 +10,31 @@ export const createParcel = async (req, res) => {
     const parcelData = { ...req.body, user_id: userId };
 
     const result = await createParcelRequest(parcelData, req.files);
+
+    // Trigger matching asynchronously (don't wait for it)
+    setImmediate(async () => {
+      try {
+        const matchResult = await matchParcelWithTravellers(result.parcel.id);
+        console.log(`[Parcel] Matching triggered for parcel ${result.parcel.id}: ${matchResult.requestsSent} requests sent`);
+
+        // Send notifications to travellers
+        if (matchResult.requests && matchResult.requests.length > 0) {
+          for (const request of matchResult.requests) {
+            await sendToTraveller(
+              request.traveller_id,
+              "New Parcel Available",
+              `A new parcel is available for delivery from ${result.pickupAddress.city} to ${result.deliveryAddress.city}`,
+              {
+                parcel_id: result.parcel.id,
+                type: "new_parcel_request",
+              }
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`[Parcel] Error triggering matching for parcel ${result.parcel.id}:`, error.message);
+      }
+    });
 
     // Return the parcel ID and booking ID to frontend
     return responseSuccess(res, "Parcel request created successfully", {
