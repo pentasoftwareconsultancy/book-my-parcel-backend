@@ -110,10 +110,10 @@ const addressSchema = Joi.object({
     "string.pattern.base": "pincode must be exactly 6 digits",
   }),
   country:   Joi.string().min(2).max(100).required(),
-  phone:     Joi.string().pattern(/^\+?\d{10,15}$/).required().messages({
-    "string.pattern.base": "phone must be 10-15 digits (optional leading +)",
+  phone:     Joi.string().pattern(/^[6-9]\d{9}$|^\+\d{10,15}$/).required().messages({
+    "string.pattern.base": "phone must be 10 digits (Indian) or 10-15 digits with country code",
   }),
-  alt_phone: Joi.string().pattern(/^\+?\d{10,15}$/).optional().allow("", null),
+  alt_phone: Joi.string().pattern(/^[6-9]\d{9}$|^\+\d{10,15}$|^$/).optional().allow("", null),
   aadhar_no: Joi.string().pattern(/^\d{12}$/).optional().allow("", null).messages({
     "string.pattern.base": "aadhar_no must be exactly 12 digits",
   }),
@@ -126,7 +126,6 @@ const addressSchema = Joi.object({
 
 export const parcelRequestSchema = Joi.object({
   package_size:   Joi.string().valid("small", "medium", "large", "extra_large").required(),
-  delivery_speed: Joi.string().valid("standard", "express", "same_day").required(),
   weight:         Joi.number().min(0).optional(),
   length:         Joi.number().min(0).optional().allow(null),
   width:          Joi.number().min(0).optional().allow(null),
@@ -164,6 +163,8 @@ export function validateRequest(schema) {
   return (req, res, next) => {
     const { error, value } = schema.validate(req.body, { abortEarly: false });
     if (error) {
+      console.error('[Validation] Request body:', JSON.stringify(req.body, null, 2));
+      console.error('[Validation] Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: "Validation failed",

@@ -10,7 +10,7 @@ const addressSchema = Joi.object({
   country: Joi.string().default("India"),
   phone: Joi.string().pattern(/^\d{10}$/).optional(), // Made optional - will fetch from profile
   alt_phone: Joi.string().pattern(/^\d{10}$/).optional(),
-  place_id: Joi.string().optional(),
+  place_id: Joi.string().allow(null).optional(),
   aadhar_no: Joi.string().pattern(/^\d{12}$/).optional(),
 });
 
@@ -20,13 +20,13 @@ export const createRouteSchema = Joi.object({
   destination: addressSchema.required(),
   
   // Scheduling
-  departure_date: Joi.date().iso().min("now").when("is_recurring", {
+  departure_date: Joi.string().isoDate().required().when("is_recurring", {
     is: false,
     then: Joi.required(),
     otherwise: Joi.forbidden(),
   }),
   departure_time: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).required(),
-  arrival_date: Joi.date().iso().optional(),
+  arrival_date: Joi.string().isoDate().optional(),
   arrival_time: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional(),
   
   // Recurring fields
@@ -41,12 +41,12 @@ export const createRouteSchema = Joi.object({
   }),
   recurring_start_date: Joi.when("is_recurring", {
     is: true,
-    then: Joi.date().iso().min("now").required(),
+    then: Joi.string().isoDate().required(),
     otherwise: Joi.forbidden(),
   }),
   recurring_end_date: Joi.when("is_recurring", {
     is: true,
-    then: Joi.date().iso().min(Joi.ref("recurring_start_date")).optional(),
+    then: Joi.string().isoDate().optional(),
     otherwise: Joi.forbidden(),
   }),
   

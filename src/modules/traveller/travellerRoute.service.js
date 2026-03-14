@@ -10,6 +10,7 @@ import {
   extractHierarchy,
   extractIntermediateCities,
 } from "../../services/googleMaps.service.js";
+import { extractAndStorePlaces } from "../../services/placeExtraction.service.js";
 import polyline from "@mapbox/polyline";
 
 // ─── Helper: Enrich address data via Google APIs ──────────────────────────────
@@ -209,10 +210,12 @@ async function extractIntermediateData(sampledPoints) {
       const addressDescriptor = descriptorResult.address_descriptor;
       if (addressDescriptor?.landmarks && Array.isArray(addressDescriptor.landmarks)) {
         for (const lm of addressDescriptor.landmarks.slice(0, 3)) {
-          landmarks.push({
-            name: lm.name,
-            distanceMeters: lm.distanceMeters,
-          });
+          if (lm.name && typeof lm.name === 'string') {
+            landmarks.push({
+              name: lm.name.trim(),
+              distanceMeters: lm.distanceMeters,
+            });
+          }
         }
       }
     } catch (error) {
@@ -349,6 +352,9 @@ export async function createTravellerRoute(data, userId) {
       },
       { transaction: t }
     );
+
+    // Phase 3: Extract and store places for Place-ID based matching
+    await extractAndStorePlaces(route.id, intermediateData, t);
 
     await t.commit();
     return { route, originAddress, destAddress };

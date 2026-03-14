@@ -133,6 +133,11 @@ const TravellerRoute = sequelize.define(
       type: DataTypes.JSONB,
       allowNull: true,
     },
+    // PostGIS geometry (Phase B)
+    route_geom: {
+      type: DataTypes.GEOMETRY("LINESTRING", 4326),
+      allowNull: true,
+    },
     // Status
     status: {
       type: DataTypes.ENUM("ACTIVE", "INACTIVE", "COMPLETED", "CANCELLED"),

@@ -14,7 +14,7 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("Application Connected to Database");
 
-    await sequelize.sync({ force: false, alter: true }); // alter: true updates schema in dev
+    await sequelize.sync({ force: false, alter: false }); // Don't auto-alter schema to avoid constraint errors
     console.log("Tables Created with Relations");
 
     //STEP 4: Seed static roles

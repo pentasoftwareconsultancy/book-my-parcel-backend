@@ -19,7 +19,9 @@ export const createParcel = async (req, res) => {
       deliveryAddress: result.deliveryAddress
     });
   } catch (error) {
-    console.error("Parcel creation error:", error);
+    console.error("Parcel creation error:", error.message);
+    console.error("Stack trace:", error.stack);
+    console.error("Full error:", error);
     return responseError(res, error.message || "Parcel request failed");
   }
 };

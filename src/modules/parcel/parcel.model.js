@@ -16,10 +16,7 @@ const Parcel = sequelize.define(
       type: DataTypes.ENUM("small", "medium", "large", "extra_large"),
       allowNull: false,
     },
-    delivery_speed: {
-      type: DataTypes.ENUM("standard", "express", "same_day"),
-      allowNull: false,
-    },
+
     weight: { type: DataTypes.FLOAT, allowNull: false },
     length: { type: DataTypes.FLOAT },
     width: { type: DataTypes.FLOAT },

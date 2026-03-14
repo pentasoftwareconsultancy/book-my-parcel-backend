@@ -30,6 +30,12 @@ async function enrichAddressWithGoogleData(addressData) {
   const { address, city, pincode, place_id } = addressData;
   const enriched = { ...addressData };
 
+  // If any required field is missing, return as-is
+  if (!address || !city || !pincode) {
+    console.warn("[GoogleMaps] Missing required address fields:", { address, city, pincode });
+    return enriched;
+  }
+
   if (!process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY === "your_google_api_key_here") {
     return enriched; // Skip if key not configured
   }
@@ -58,15 +64,16 @@ async function enrichAddressWithGoogleData(addressData) {
       } catch (e) {
         console.warn("[GoogleMaps] Address validation skipped:", e.message);
       }
-    } else {
-      console.warn("[GoogleMaps] Address validation skipped: No separate API key configured");
     }
 
     // 2. Geocode to get lat/lng and place_id
     const geocodeResult = await geocodeAddress(`${address}, ${city}, ${pincode}, India`);
     const firstResult = geocodeResult.results?.[0];
 
-    if (!firstResult) return enriched;
+    if (!firstResult) {
+      console.warn("[GoogleMaps] No geocode result found for:", { address, city, pincode });
+      return enriched;
+    }
 
     const location = firstResult.geometry?.location;
     const resolvedPlaceId = place_id || firstResult.place_id;
@@ -159,7 +166,7 @@ async function getOrCreateAddress(enrichedData, type, userId, transaction) {
       alt_phone:        enrichedData.alt_phone || null,
       aadhar_no:        enrichedData.aadhar_no || null,
       type,
-      user_profile_id:  userId,
+      user_profile_id:  null, // Don't set user_profile_id for parcel addresses
       // Enriched fields (may be null if Google API not configured)
       place_id:          enrichedData.place_id          || null,
       latitude:          enrichedData.latitude          || null,
@@ -183,7 +190,15 @@ async function getOrCreateAddress(enrichedData, type, userId, transaction) {
 // ─── Main Service Functions ───────────────────────────────────────────────────
 
 export async function createParcelRequest(data, files) {
+  // Sanitize data: convert empty strings to null or defaults
   if (!data.weight) data.weight = weightMap[data.package_size] || 1;
+  
+  // Sanitize numeric fields
+  data.length = data.length && !isNaN(data.length) ? Number(data.length) : null;
+  data.width = data.width && !isNaN(data.width) ? Number(data.width) : null;
+  data.height = data.height && !isNaN(data.height) ? Number(data.height) : null;
+  data.value = data.value && !isNaN(data.value) ? Number(data.value) : null;
+  data.price_quote = data.price_quote && !isNaN(data.price_quote) ? Number(data.price_quote) : null;
 
   const photoPaths = files?.length ? await uploadFiles(files) : [];
   const parcel_ref = await generateParcelId();
@@ -240,7 +255,6 @@ export async function createParcelRequest(data, files) {
         user_id:               data.user_id,
         parcel_ref,
         package_size:          data.package_size,
-        delivery_speed:        data.delivery_speed,
         weight:                data.weight,
         length:                data.length     || null,
         width:                 data.width      || null,

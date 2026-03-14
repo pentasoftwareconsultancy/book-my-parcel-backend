@@ -34,6 +34,7 @@ import Address from "./parcel/address.model.js";
 
 // Route
 import TravellerRoute from "./traveller/travellerRoute.model.js";
+import RoutePlace from "./traveller/routePlace.model.js";
 
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
@@ -211,6 +212,17 @@ TravellerRoute.belongsTo(Address, { as: "originAddress", foreignKey: "origin_add
 TravellerRoute.belongsTo(Address, { as: "destAddress", foreignKey: "dest_address_id" });
 Address.hasMany(TravellerRoute, { as: "originRoutes", foreignKey: "origin_address_id" });
 Address.hasMany(TravellerRoute, { as: "destRoutes", foreignKey: "dest_address_id" });
+
+// Phase 3: TravellerRoute ↔ RoutePlace associations (Place-ID matching)
+TravellerRoute.hasMany(RoutePlace, {
+  foreignKey: "route_id",
+  as: "places",
+  onDelete: "CASCADE"
+});
+RoutePlace.belongsTo(TravellerRoute, {
+  foreignKey: "route_id",
+  as: "route"
+});
 // // travellerkyc
 
 User.hasOne(TravellerKYC, {
@@ -257,7 +269,9 @@ export {
   WalletTransaction,
   Refund,
   ParcelTracking,
-  Address
+  Address,
+  TravellerRoute,
+  RoutePlace
 };
 
 

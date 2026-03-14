@@ -4,12 +4,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon server.js",
-    "verify": "node verify-phase1-setup.js",
-    "fix": "node fix-phase1-issues.js",
-    "test:geocoding": "node test-geocoding.js",
-    "test:validation": "node test-validation-api.js"
+    "start": "nodemon server.js"
   },
   "keywords": [],
   "author": "",
