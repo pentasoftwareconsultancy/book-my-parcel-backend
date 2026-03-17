@@ -8,6 +8,8 @@ import UserRole from "../user/userRole.model.js";
 import Booking from "../booking/booking.model.js";
 import BookingStatusLog from "../booking/bookingStatusLog.model.js";
 import Payment from "../payment/payment.model.js";
+import Parcel from "../parcel/parcel.model.js";
+import TravellerTrip from "../traveller/travellerTrip.model.js";
 
 /**
  * Admin Fetch Users with Pagination + Role Filter
@@ -229,20 +231,69 @@ export const updateTravelerKYCStatus = async (kycId, status) => {
 
 // -------------------------------------- admin overview dashboard ----------------------------------------
 
-export const getRoleWiseUserCountService = async () => {
-  return await Role.findAll({
-    attributes: [
-      "name",
-      [sequelize.fn("COUNT", sequelize.col("user_roles.user_id")), "total_users"],
-    ],
+export const getRecentBookingsService = async () => {
+  const bookings = await Booking.findAll({
+    order: [["createdAt", "DESC"]],
+    limit: 20,
     include: [
       {
-        model: UserRole,
-        attributes: [],
+        model: Parcel,
+        as: "parcel",
+        attributes: ["id"],
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name"],
+          },
+        ],
+      },
+      {
+        model: User,
+        as: "traveller",
+        attributes: ["id", "name"],
+      },
+      {
+        model: TravellerTrip,
+        as: "traveller_trip",
+        attributes: ["source_city", "destination_city"],
+      },
+      {
+        model: Payment,
+        attributes: ["amount"],
       },
     ],
-    group: ["roles.id"],
   });
+
+  const formatted = bookings.map((b) => ({
+    bookingId: b.id,
+    user: b.parcel?.user?.name || "N/A",
+    partner: b.traveller?.name || "Not assigned",
+    route: b.traveller_trip
+      ? `${b.traveller_trip.source_city} → ${b.traveller_trip.destination_city}`
+      : "N/A",
+    status: b.status,
+    amount: b.Payment?.amount || 0,
+  }));
+
+  return formatted;
+};
+
+export const getRoleWiseUserCountService = async () => {
+
+  const result = await sequelize.query(`
+    SELECT 
+      r.name,
+      COUNT(ur.user_id) AS total_users
+    FROM roles r
+    LEFT JOIN user_roles ur ON ur.role_id = r.id
+    WHERE r.name IN ('TRAVELLER', 'INDIVIDUAL')
+    GROUP BY r.name
+  `,{
+    type: QueryTypes.SELECT
+  });
+
+  return result;
 };
 
 export const getActiveBookingCountService = async () => {
@@ -268,4 +319,97 @@ export const getTotalRevenueService = async () => {
   });
 
   return result.total_revenue || 0;
+};
+
+export const getRecentUserService = async (params = {}) => {
+  const page = parseInt(params.page) || 1;
+  const limit = parseInt(params.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  const sqlQuery = `
+    SELECT
+      u.id,
+      up.full_name,
+      u.email,
+      u."createdAt"
+    FROM users u
+    INNER JOIN user_profiles up
+      ON u.id = up.user_id
+    ORDER BY u."createdAt" DESC
+    LIMIT :limit OFFSET :offset
+  `;
+
+  const users = await sequelize.query(sqlQuery, {
+    type: QueryTypes.SELECT,
+    replacements: { limit, offset }
+  });
+
+  return users;
+};
+
+export const getRecentTravellerService = async (params = {}) => {
+  const page = parseInt(params.page) || 1;
+  const limit = parseInt(params.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  const sqlQuery = `
+    SELECT
+      tp.id AS traveller_profile_id,
+      tp.name,
+      tp.email,
+      tp.status,
+      tp."createdAt"
+    FROM traveller_profiles tp
+    ORDER BY tp."createdAt" DESC
+    LIMIT :limit OFFSET :offset
+  `;
+
+  const travellers = await sequelize.query(sqlQuery, {
+    type: QueryTypes.SELECT,
+    replacements: { limit, offset },
+  });
+
+  return travellers;
+};
+
+export const getAdminDashboardService = async (params = {}) => {
+
+  const [
+    roleStats,
+    activeBookings,
+    totalRevenue,
+    recentUsers,
+    recentTravellers,
+    recentBookings
+  ] = await Promise.all([
+    getRoleWiseUserCountService(),
+    getActiveBookingCountService(),
+    getTotalRevenueService(),
+    getRecentUserService(params),
+    getRecentTravellerService(params),
+    getRecentBookingsService(params)
+  ]);
+
+  const stats = {
+    travellers: 0,
+    individuals: 0
+  };
+
+  roleStats.forEach((role) => {
+    const count = parseInt(role.total_users);
+
+    if (role.name === "TRAVELLER") stats.travellers = count;
+    if (role.name === "INDIVIDUAL") stats.individuals = count;
+  });
+
+  return {
+    stats: {
+      ...stats,
+      activeBookings,
+      totalRevenue
+    },
+    recentUsers,
+    recentTravellers,
+    recentBookings
+  };
 };
