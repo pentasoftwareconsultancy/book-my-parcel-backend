@@ -4,7 +4,7 @@ dotenv.config();
 import initDatabase from "./src/config/db.init.js";
 import sequelize from "./src/config/database.config.js";
 import "./src/modules/associations.js";
-import app from "./src/app.js";
+import { server } from "./src/app.js";
 import { seedRoles } from "./src/utils/seedRoles.js";
 import { createDefaultAdmin } from "./src/utils/createDefaultAdmin.js";
 const startServer = async () => {
@@ -23,7 +23,7 @@ const startServer = async () => {
     await createDefaultAdmin();
 
     const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
   } catch (error) {
