@@ -99,6 +99,46 @@ export async function computeRoute(originLatLng, destLatLng) {
   return response.data;
 }
 
+// ─── Routes API (Pro) - Compute Route Matrix with Traffic ──────────────────
+export async function computeRouteMatrix(origins, destinations) {
+  const url = `https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix?key=${GOOGLE_API_KEY}`;
+  
+  const payload = {
+    origins: origins.map(origin => ({
+      waypoint: {
+        location: {
+          latLng: {
+            latitude: origin.lat,
+            longitude: origin.lng,
+          },
+        },
+      },
+    })),
+    destinations: destinations.map(dest => ({
+      waypoint: {
+        location: {
+          latLng: {
+            latitude: dest.lat,
+            longitude: dest.lng,
+          },
+        },
+      },
+    })),
+    travelMode: "DRIVE",
+    routingPreference: "TRAFFIC_AWARE",
+    languageCode: "en-IN",
+    units: "METRIC",
+  };
+
+  const response = await axios.post(url, payload, {
+    headers: {
+      "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,status",
+    },
+  });
+  
+  return response.data;
+}
+
 // ─── Hierarchy Extractor ──────────────────────────────────────────────────────
 // Parses Place Details API (new) addressComponents/containingPlaces into
 // a flat hierarchy object: { district, taluka, locality, subLocality }

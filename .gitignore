@@ -23,4 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment variables
 .env
+
+# User uploads and generated content (from website)
+uploads/
+uploads/**/*
+
+# Keep upload directory structure but ignore content
+!uploads/
+!uploads/*/
+uploads/*/**

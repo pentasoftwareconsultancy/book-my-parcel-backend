@@ -43,6 +43,7 @@ const Parcel = sequelize.define(
         "CREATED",
         "MATCHING",
         "CONFIRMED",
+        "PICKUP",
         "IN_TRANSIT",
         "DELIVERED",
         "CANCELLED",

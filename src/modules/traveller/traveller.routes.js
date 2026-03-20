@@ -47,6 +47,11 @@ router.patch("/kyc/status/:id", authMiddleware, validateStatus, ctrl.updateKYCSt
 router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
 router.get("/dashboard/stats",      authMiddleware, ctrl.getTravelerStats);
 
+// ── Delivery Status & OTP Management ────────  ✅ NEW
+router.patch("/booking/:bookingId/status", authMiddleware, ctrl.updateBookingStatus);
+router.post("/booking/:bookingId/otp/generate", authMiddleware, ctrl.generateOTP);
+router.post("/booking/:bookingId/otp/verify", authMiddleware, ctrl.verifyOTP);
+
 // ── Routes ───────────────────────────────────
 // Routes are now handled by travellerRoute.routes.js with proper Joi validation
 // router.post("/routes",     authMiddleware, validateRoute, ctrl.createRoute);

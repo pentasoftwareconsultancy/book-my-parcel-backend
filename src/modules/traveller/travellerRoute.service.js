@@ -234,14 +234,46 @@ async function extractIntermediateData(sampledPoints) {
 
 // ─── Main Service: Create Traveller Route ─────────────────────────────────────
 export async function createTravellerRoute(data, userId) {
-  // Step 0: Get traveller profile to fetch phone if not provided
-  const travellerProfile = await TravellerProfile.findOne({
+  // Step 0: Get or create traveller profile
+  let travellerProfile = await TravellerProfile.findOne({
     where: { user_id: userId },
     include: [{ association: "user", attributes: ["phone_number"] }],
   });
 
   if (!travellerProfile) {
-    throw new Error("Traveller profile not found");
+    // Auto-create traveller profile with basic info from route data
+    travellerProfile = await TravellerProfile.create({
+      user_id: userId,
+      vehicle_type: data.vehicle_type || 'car',
+      vehicle_number: data.vehicle_number || null,
+      capacity_kg: data.max_weight_kg || 50,
+      status: 'ACTIVE',
+      is_available: true,
+    });
+    
+    // Assign TRAVELLER role to user if not already assigned
+    const { User, Role, UserRole } = await import('../associations.js');
+    const travellerRole = await Role.findOne({ where: { name: 'TRAVELLER' } });
+    if (travellerRole) {
+      const existingUserRole = await UserRole.findOne({
+        where: { user_id: userId, role_id: travellerRole.id }
+      });
+      if (!existingUserRole) {
+        await UserRole.create({
+          user_id: userId,
+          role_id: travellerRole.id
+        });
+        console.log(`[TravellerRoute] Assigned TRAVELLER role to user ${userId}`);
+      }
+    }
+    
+    // Fetch the created profile with user association
+    travellerProfile = await TravellerProfile.findOne({
+      where: { id: travellerProfile.id },
+      include: [{ association: "user", attributes: ["phone_number"] }],
+    });
+    
+    console.log(`[TravellerRoute] Auto-created traveller profile for user ${userId}`);
   }
 
   // Use profile phone if not provided in addresses

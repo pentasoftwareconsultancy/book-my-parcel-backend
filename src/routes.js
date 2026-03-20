@@ -24,6 +24,9 @@ router.use("/traveller", travellerRoutes); // /api/traveller/...
 router.use("/traveller/routes", travellerRouteRoutes); // /api/traveller/routes
 router.use("/traveller", matchingRoutes); // /api/traveller/requests, /api/traveller/requests/:requestId/accept
 
+// Matching Routes
+router.use("/matching", matchingRoutes); // /api/matching/run-periodic
+
 // Admin Routes
 router.use("/admin", adminRoutes); // /api/admin/...
 

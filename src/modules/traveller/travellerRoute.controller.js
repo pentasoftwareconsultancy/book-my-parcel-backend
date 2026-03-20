@@ -4,6 +4,7 @@ import {
   getRouteById,
 } from "./travellerRoute.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
+import { matchRouteWithExistingParcels } from "../../services/matchingEngine.service.js";
 
 // Create a new traveller route
 export async function createRoute(req, res) {
@@ -13,6 +14,16 @@ export async function createRoute(req, res) {
 
     // Generate route reference (optional, can be added to service)
     const routeRef = `TR-${new Date().getFullYear()}-${String(route.id).slice(0, 8).toUpperCase()}`;
+
+    // Trigger matching with existing parcels in the background
+    setImmediate(async () => {
+      try {
+        const matchResult = await matchRouteWithExistingParcels(route.id);
+        console.log(`[TravellerRoute] Route ${route.id} matched with ${matchResult.matchedParcels} existing parcels`);
+      } catch (error) {
+        console.error(`[TravellerRoute] Error matching route ${route.id} with existing parcels:`, error.message);
+      }
+    });
 
     return responseSuccess(res, "Route created successfully", {
       id: route.id,

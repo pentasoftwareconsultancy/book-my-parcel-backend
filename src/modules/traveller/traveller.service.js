@@ -202,7 +202,8 @@ export async function fetchTravellerDeliveries(travellerUserId, query) {
       bookingId:  `BMP${booking.id.substring(0, 8).toUpperCase()}`,
       trackingId: `BMP${booking.id.substring(0, 12).toUpperCase()}`,
       status:     booking.status,
-      customer:   sender?.profile?.name || "Unknown Customer", // ✅ fixed
+      customer:   sender?.profile?.name || "Unknown Customer",
+      customerPhone: sender?.phone_number || "",
       pickup: {
         city:    parcel?.pickupAddress?.city    || "",
         address: parcel?.pickupAddress?.address || "",
@@ -220,9 +221,21 @@ export async function fetchTravellerDeliveries(travellerUserId, query) {
         year:  "numeric",
       }),
       package: {
-        size:   parcel?.package_size || "",
-        weight: `${parcel?.weight} kg`,
+        size:   parcel?.package_size || "Medium",
+        weight: `${parcel?.weight || 0} kg`,
+        type:   parcel?.parcel_type || "Standard",
       },
+      // Additional useful information
+      parcelRef: parcel?.parcel_ref || "",
+      urgent: parcel?.is_urgent || false,
+      specialInstructions: parcel?.special_instructions || "",
+      estimatedDeliveryTime: parcel?.estimated_delivery_time || "",
+      // Booking specific info
+      assignedDate: booking.assigned_date,
+      bookingRef: booking.booking_ref || "",
+      // OTP information
+      pickupOTP: booking.pickup_otp || null,
+      deliveryOTP: booking.delivery_otp || null,
     };
   });
 
@@ -281,8 +294,166 @@ export async function fetchTravellerStats(travellerUserId) {
 
 
 /* ─────────────────────────────
-   ROUTE SERVICES
+   DELIVERY STATUS TRANSITIONS & OTP  ✅ NEW
 ───────────────────────────── */
+
+/**
+ * Generate OTP for pickup/delivery verification
+ */
+export async function generateOTP(bookingId, type) {
+  // Generate 4-digit OTP
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
+  
+  // In production, store OTP in Redis with expiration
+  // For now, we'll store in booking record or separate OTP table
+  
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) {
+    throw new Error("Booking not found");
+  }
+  
+  // Store OTP in booking record (you might want a separate OTP table)
+  const otpField = type === 'pickup' ? 'pickup_otp' : 'delivery_otp';
+  await booking.update({ [otpField]: otp });
+  
+  // TODO: Send OTP via SMS/WhatsApp to customer
+  console.log(`📱 OTP ${otp} generated for ${type} - Booking: ${bookingId}`);
+  
+  return { otp, expiresIn: 300 }; // 5 minutes
+}
+
+/**
+ * Verify OTP and update booking status
+ */
+export async function verifyOTPAndUpdateStatus(bookingId, otp, type, travellerUserId) {
+  const booking = await Booking.findByPk(bookingId, {
+    include: [{
+      model: Parcel,
+      as: "parcel",
+      required: true
+    }]
+  });
+  
+  if (!booking) {
+    throw new Error("Booking not found");
+  }
+  
+  if (booking.traveller_id !== travellerUserId) {
+    throw new Error("Unauthorized: Not your booking");
+  }
+  
+  // Check OTP
+  const otpField = type === 'pickup' ? 'pickup_otp' : 'delivery_otp';
+  const storedOTP = booking[otpField];
+  
+  if (!storedOTP || storedOTP !== otp) {
+    throw new Error("Invalid OTP");
+  }
+  
+  // Update status based on type
+  let newStatus;
+  if (type === 'pickup') {
+    if (booking.status !== 'PICKUP') {
+      throw new Error("Invalid status transition for pickup OTP");
+    }
+    newStatus = 'IN_TRANSIT';
+  } else if (type === 'delivery') {
+    if (booking.status !== 'PICKUP') {
+      throw new Error("Invalid status transition for delivery OTP");
+    }
+    // Delivery OTP verification from PICKUP goes directly to IN_TRANSIT (final delivered state)
+    newStatus = 'IN_TRANSIT';
+  } else {
+    throw new Error("Invalid OTP type");
+  }
+  
+  // Update both booking and parcel status
+  await Promise.all([
+    booking.update({ 
+      status: newStatus,
+      [otpField]: null // Clear OTP after verification
+    }),
+    booking.parcel.update({ status: newStatus })
+  ]);
+  
+  console.log(`✅ ${type} OTP verified - Status updated to ${newStatus}`);
+  
+  return { 
+    success: true, 
+    newStatus,
+    message: `${type === 'pickup' ? 'Pickup' : 'Delivery'} confirmed successfully`
+  };
+}
+
+/**
+ * Update booking status (for non-OTP transitions)
+ */
+export async function updateBookingStatus(bookingId, newStatus, travellerUserId) {
+  const booking = await Booking.findByPk(bookingId, {
+    include: [{
+      model: Parcel,
+      as: "parcel",
+      required: true
+    }]
+  });
+  
+  if (!booking) {
+    throw new Error("Booking not found");
+  }
+  
+  if (booking.traveller_id !== travellerUserId) {
+    throw new Error("Unauthorized: Not your booking");
+  }
+  
+  // Validate status transitions
+  const validTransitions = {
+    'CONFIRMED': ['PICKUP', 'CANCELLED'],
+    'PICKUP': ['IN_TRANSIT', 'CANCELLED'],
+    'IN_TRANSIT': ['DELIVERED', 'CANCELLED']
+  };
+  
+  const currentStatus = booking.status;
+  if (!validTransitions[currentStatus] || !validTransitions[currentStatus].includes(newStatus)) {
+    throw new Error(`Invalid status transition from ${currentStatus} to ${newStatus}`);
+  }
+  
+  // For PICKUP status, generate both pickup and delivery OTPs
+  let otpData = null;
+  if (newStatus === 'PICKUP') {
+    const pickupOTP = Math.floor(1000 + Math.random() * 9000).toString();
+    const deliveryOTP = Math.floor(1000 + Math.random() * 9000).toString();
+    
+    // Update booking with both OTPs
+    await booking.update({ 
+      status: newStatus,
+      pickup_otp: pickupOTP,
+      delivery_otp: deliveryOTP
+    });
+    
+    otpData = { 
+      pickupOTP, 
+      deliveryOTP,
+      expiresIn: 300 
+    };
+    
+    console.log(`📱 OTPs generated - Pickup: ${pickupOTP}, Delivery: ${deliveryOTP}`);
+  } else {
+    // For other transitions, just update status
+    await booking.update({ status: newStatus });
+  }
+  
+  // Also update parcel status
+  await booking.parcel.update({ status: newStatus });
+  
+  console.log(`📋 Status updated: ${currentStatus} → ${newStatus}`);
+  
+  return { 
+    success: true, 
+    newStatus,
+    otpData,
+    message: `Status updated to ${newStatus}`
+  };
+}
 
 export const createRoute = async (userId, body) => {
   const profile = await TravellerProfile.findOne({ where: { user_id: userId } });

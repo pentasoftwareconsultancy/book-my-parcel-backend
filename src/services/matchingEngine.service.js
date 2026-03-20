@@ -1,11 +1,8 @@
 import sequelize from "../config/database.config.js";
-import Parcel from "../modules/parcel/parcel.model.js";
-import Address from "../modules/parcel/address.model.js";
-import TravellerRoute from "../modules/traveller/travellerRoute.model.js";
-import TravellerProfile from "../modules/traveller/travellerProfile.model.js";
-import ParcelRequest from "../modules/matching/parcelRequest.model.js";
-import RoutePlace from "../modules/traveller/routePlace.model.js";
+import { Op } from "sequelize";
+import { Parcel, Address, TravellerRoute, TravellerProfile, ParcelRequest, RoutePlace } from "../modules/associations.js";
 import { computeRoute } from "./googleMaps.service.js";
+import { findRoutesBetweenPoints, findRoutesWithinBuffer } from "./spatialMatching.service.js";
 
 const MAX_CANDIDATES = 20;
 const MAX_DETOUR_PERCENTAGE = 20;
@@ -83,14 +80,20 @@ async function findCandidateTravellers(parcelData) {
 
     // Method B: JSONB array containment (fallback)
     if (candidates.size < 5 && parcelData.pickup.locality && parcelData.delivery.locality) {
-      const arrayMatches = await TravellerRoute.findAll({
-        attributes: ["id"],
-        where: sequelize.where(
-          sequelize.fn("jsonb_contains", sequelize.col("localities_passed"), `"${parcelData.pickup.locality}"`),
-          true
-        ),
-        raw: true,
-      });
+      const arrayMatches = await sequelize.query(
+        `
+        SELECT id FROM traveller_routes
+        WHERE localities_passed @> :pickupLocality
+          AND localities_passed @> :deliveryLocality
+        `,
+        {
+          replacements: {
+            pickupLocality: JSON.stringify([parcelData.pickup.locality]),
+            deliveryLocality: JSON.stringify([parcelData.delivery.locality]),
+          },
+          type: sequelize.QueryTypes.SELECT,
+        }
+      );
 
       arrayMatches.forEach((match) => candidates.add(match.id));
       console.log(`[Matching] JSONB array matches: ${arrayMatches.length}`);
@@ -98,19 +101,55 @@ async function findCandidateTravellers(parcelData) {
 
     // Method C: City-level JSONB matching (broader fallback)
     if (candidates.size < 10 && parcelData.pickup.city && parcelData.delivery.city) {
-      const cityMatches = await TravellerRoute.findAll({
-        attributes: ["id"],
-        where: sequelize.where(
-          sequelize.fn("jsonb_contains", sequelize.col("cities_passed"), `"${parcelData.pickup.city}"`),
-          true
-        ),
-        raw: true,
-      });
+      const cityMatches = await sequelize.query(
+        `
+        SELECT id FROM traveller_routes
+        WHERE cities_passed @> :pickupCity
+          AND cities_passed @> :deliveryCity
+        `,
+        {
+          replacements: {
+            pickupCity: JSON.stringify([parcelData.pickup.city]),
+            deliveryCity: JSON.stringify([parcelData.delivery.city]),
+          },
+          type: sequelize.QueryTypes.SELECT,
+        }
+      );
 
       cityMatches.forEach((match) => candidates.add(match.id));
       console.log(`[Matching] City-level matches: ${cityMatches.length}`);
     }
 
+    // Method D: Spatial matching (geographic proximity fallback)
+    if (candidates.size < 15 && parcelData.pickup.lat && parcelData.pickup.lng && parcelData.delivery.lat && parcelData.delivery.lng) {
+      console.log(`[Matching] Attempting spatial matching between (${parcelData.pickup.lat}, ${parcelData.pickup.lng}) and (${parcelData.delivery.lat}, ${parcelData.delivery.lng})`);
+      
+      const spatialMatches = await findRoutesBetweenPoints(
+        parcelData.pickup.lng,
+        parcelData.pickup.lat,
+        parcelData.delivery.lng,
+        parcelData.delivery.lat
+      );
+
+      spatialMatches.forEach((match) => candidates.add(match.id));
+      console.log(`[Matching] Spatial matches: ${spatialMatches.length}`);
+    }
+
+    // Method E: Buffer-based spatial matching (even broader fallback)
+    if (candidates.size < 20 && parcelData.pickup.lat && parcelData.pickup.lng) {
+      console.log(`[Matching] Attempting buffer-based spatial matching around pickup point (${parcelData.pickup.lat}, ${parcelData.pickup.lng})`);
+      
+      const bufferMatches = await findRoutesWithinBuffer(
+        parcelData.pickup.lng,
+        parcelData.pickup.lat,
+        DEFAULT_BUFFER_KM
+      );
+
+      bufferMatches.forEach((match) => candidates.add(match.id));
+      console.log(`[Matching] Buffer-based matches: ${bufferMatches.length}`);
+    }
+
+    console.log(`[Matching] Total unique candidates found: ${candidates.size}`);
     return Array.from(candidates);
   } catch (error) {
     console.error("[Matching] Error finding candidate travellers:", error.message);
@@ -144,24 +183,37 @@ function applyTemporalFilters(routes, parcelData) {
 
 // ─── Step 4: Apply Capacity & Preference Filters ────────────────────────────
 function applyCapacityAndPreferenceFilters(routes, parcelData) {
+  console.log(`[Matching] Applying capacity filters - Parcel weight: ${parcelData.weight}kg, type: ${parcelData.parcel_type}`);
+  
   return routes.filter((route) => {
-    // Capacity check
-    if (parcelData.weight > route.available_capacity_kg) {
-      return false;
-    }
+    console.log(`[Matching] Checking route ${route.id}: capacity=${route.available_capacity_kg}kg, accepted_types=${JSON.stringify(route.accepted_parcel_types)}, min_earning=${route.min_earning_per_delivery}`);
+    
+    // TEMPORARILY DISABLED: Capacity check
+    // if (parcelData.weight > route.available_capacity_kg) {
+    //   console.log(`[Matching] Route ${route.id} rejected: weight ${parcelData.weight}kg > capacity ${route.available_capacity_kg}kg`);
+    //   return false;
+    // }
 
-    // Parcel type check
-    if (route.accepted_parcel_types && route.accepted_parcel_types.length > 0) {
-      if (!route.accepted_parcel_types.includes(parcelData.parcel_type)) {
+    // TEMPORARILY DISABLED: Parcel type check
+    // if (route.accepted_parcel_types && route.accepted_parcel_types.length > 0) {
+    //   if (!route.accepted_parcel_types.includes(parcelData.parcel_type)) {
+    //     console.log(`[Matching] Route ${route.id} rejected: parcel type ${parcelData.parcel_type} not in accepted types`);
+    //     return false;
+    //   }
+    // }
+
+    // Keep minimum earning check (optional)
+    // Skip price validation if parcel doesn't have a price quote yet
+    if (route.min_earning_per_delivery) {
+      if (parcelData.price_quote === null) {
+        console.log(`[Matching] Route ${route.id} - parcel has no price quote, skipping min earning check`);
+      } else if (parcelData.price_quote < route.min_earning_per_delivery) {
+        console.log(`[Matching] Route ${route.id} rejected: price ${parcelData.price_quote} < min earning ${route.min_earning_per_delivery}`);
         return false;
       }
     }
 
-    // Minimum earning check
-    if (route.min_earning_per_delivery && parcelData.price_quote < route.min_earning_per_delivery) {
-      return false;
-    }
-
+    console.log(`[Matching] Route ${route.id} passed capacity/preference filters`);
     return true;
   });
 }
@@ -173,15 +225,15 @@ async function estimateDetour(route, parcelData) {
     const pickupToOrigin = haversineDistance(
       parcelData.pickup.lat,
       parcelData.pickup.lng,
-      route.originAddress.latitude,
-      route.originAddress.longitude
+      Number(route.originAddress?.latitude || route['originAddress.latitude']),
+      Number(route.originAddress?.longitude || route['originAddress.longitude'])
     );
 
     const deliveryToDestination = haversineDistance(
       parcelData.delivery.lat,
       parcelData.delivery.lng,
-      route.destAddress.latitude,
-      route.destAddress.longitude
+      Number(route.destAddress?.latitude || route['destAddress.latitude']),
+      Number(route.destAddress?.longitude || route['destAddress.longitude'])
     );
 
     const estimatedDetour = pickupToOrigin + deliveryToDestination;
@@ -211,7 +263,7 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 async function selectTopCandidates(routes, parcelData) {
   const routesWithEstimates = await Promise.all(
     routes.map(async (route) => ({
-      ...route,
+      ...route.toJSON(), // Convert Sequelize instance to plain object
       estimatedDetour: await estimateDetour(route, parcelData),
     }))
   );
@@ -234,13 +286,14 @@ async function calculateExactDetour(route, parcelData) {
     );
 
     const parcelRoute = routeResult.routes?.[0];
-    if (!parcelRoute) {
+    if (!parcelRoute || !parcelRoute.distanceMeters) {
       return null;
     }
 
     const parcelDistance = parcelRoute.distanceMeters / 1000;
-    const detourKm = parcelDistance - route.total_distance_km;
-    const detourPercentage = (detourKm / route.total_distance_km) * 100;
+    const routeDistance = Number(route.total_distance_km) || 0;
+    const detourKm = parcelDistance - routeDistance;
+    const detourPercentage = routeDistance > 0 ? (detourKm / routeDistance) * 100 : 0;
 
     return {
       detourKm: Math.max(0, detourKm),
@@ -261,7 +314,7 @@ async function createParcelRequests(parcelId, candidates) {
     try {
       const request = await ParcelRequest.create({
         parcel_id: parcelId,
-        traveller_id: candidate.traveller_profile_id,
+        traveller_id: candidate.travellerProfile.user_id,
         route_id: candidate.id,
         match_score: candidate.matchScore || null,
         detour_km: candidate.detourKm || null,
@@ -272,7 +325,7 @@ async function createParcelRequests(parcelId, candidates) {
 
       requests.push(request);
     } catch (error) {
-      console.error(`[Matching] Error creating request for traveller ${candidate.traveller_profile_id}:`, error.message);
+      console.error(`[Matching] Error creating request for traveller ${candidate.travellerProfile.user_id}:`, error.message);
     }
   }
 
@@ -283,6 +336,13 @@ async function createParcelRequests(parcelId, candidates) {
 export async function matchParcelWithTravellers(parcelId) {
   try {
     console.log(`[Matching] Starting match for parcel ${parcelId}`);
+
+    // Step 0: Update parcel status to MATCHING
+    await Parcel.update(
+      { status: "MATCHING" },
+      { where: { id: parcelId } }
+    );
+    console.log(`[Matching] Updated parcel ${parcelId} status to MATCHING`);
 
     // Step 1: Fetch parcel data
     const parcelData = await fetchParcelData(parcelId);
@@ -303,6 +363,11 @@ export async function matchParcelWithTravellers(parcelId) {
       include: [
         { model: Address, as: "originAddress" },
         { model: Address, as: "destAddress" },
+        { 
+          model: TravellerProfile, 
+          as: "travellerProfile",
+          attributes: ["id", "user_id"]
+        },
       ],
     });
 
@@ -335,7 +400,7 @@ export async function matchParcelWithTravellers(parcelId) {
     for (const candidate of topCandidates) {
       const detourInfo = await calculateExactDetour(candidate, parcelData);
 
-      if (detourInfo) {
+      if (detourInfo && detourInfo.detourKm !== null && detourInfo.detourPercentage !== null) {
         if (detourInfo.detourPercentage <= MAX_DETOUR_PERCENTAGE && detourInfo.detourKm <= MAX_DETOUR_KM) {
           finalCandidates.push({
             ...candidate,
@@ -345,13 +410,15 @@ export async function matchParcelWithTravellers(parcelId) {
           });
         }
       } else {
-        // If exact detour calculation fails, use estimated detour
-        if (candidate.estimatedDetour <= MAX_DETOUR_KM) {
+        // If exact detour calculation fails, use estimated detour with more lenient threshold
+        // Use 100 km threshold for estimated detour (more lenient than exact)
+        if (candidate.estimatedDetour <= 100) {
+          const detourPercentage = (candidate.estimatedDetour / candidate.total_distance_km) * 100;
           finalCandidates.push({
             ...candidate,
             detourKm: candidate.estimatedDetour,
-            detourPercentage: (candidate.estimatedDetour / candidate.total_distance_km) * 100,
-            matchScore: 100 - (candidate.estimatedDetour / candidate.total_distance_km) * 100,
+            detourPercentage: detourPercentage,
+            matchScore: Math.max(0, 100 - detourPercentage),
           });
         }
       }
@@ -436,4 +503,131 @@ export async function expireOldRequests() {
 
   console.log(`[Matching] Expired ${result[0]} old requests`);
   return result[0];
+}
+
+// ─── Match Route with Existing Parcels ─────────────────────────────────────
+/**
+ * When a new route is created, check if it matches any existing parcels
+ * that are still in MATCHING status
+ */
+export async function matchRouteWithExistingParcels(routeId) {
+  try {
+    console.log(`[Matching] Checking route ${routeId} against existing parcels`);
+
+    // Find all parcels that are still looking for travellers
+    // Using only valid enum values from the Parcel model
+    const matchingParcels = await Parcel.findAll({
+      where: {
+        status: {
+          [Op.in]: ["CREATED", "MATCHING"] // Only use valid enum values
+        },
+        createdAt: {
+          [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days instead of 24 hours
+        },
+      },
+      attributes: ["id", "status", "createdAt"],
+    });
+
+    console.log(`[Matching] Found ${matchingParcels.length} parcels in matching-eligible status`);
+    
+    // Log details of found parcels
+    matchingParcels.forEach(parcel => {
+      console.log(`[Matching] Parcel ${parcel.id}: status=${parcel.status}, created=${parcel.createdAt}`);
+    });
+
+    if (matchingParcels.length === 0) {
+      return { success: true, matchedParcels: 0, message: "No parcels in matching status" };
+    }
+
+    let totalMatched = 0;
+
+    // For each parcel, run the matching engine
+    for (const parcel of matchingParcels) {
+      try {
+        console.log(`[Matching] Attempting to match route ${routeId} with parcel ${parcel.id}`);
+        const result = await matchParcelWithTravellers(parcel.id);
+        if (result.success && result.requestsSent > 0) {
+          totalMatched++;
+          console.log(`[Matching] ✅ Route ${routeId} matched with parcel ${parcel.id} - ${result.requestsSent} requests sent`);
+        } else {
+          console.log(`[Matching] ❌ Route ${routeId} did not match with parcel ${parcel.id} - ${result.message}`);
+        }
+      } catch (error) {
+        console.error(`[Matching] Error matching route ${routeId} with parcel ${parcel.id}:`, error.message);
+        // Continue with other parcels even if one fails
+      }
+    }
+
+    console.log(`[Matching] Route ${routeId} successfully matched with ${totalMatched} parcels`);
+
+    return {
+      success: true,
+      matchedParcels: totalMatched,
+      totalParcelsChecked: matchingParcels.length,
+    };
+  } catch (error) {
+    console.error("[Matching] Error in matchRouteWithExistingParcels:", error.message);
+    throw error;
+  }
+}
+// ─── Periodic Matching Job ─────────────────────────────────────────────────
+/**
+ * Periodic job to match existing parcels with routes
+ * This can be called by a cron job or scheduler
+ */
+export async function runPeriodicMatching() {
+  try {
+    console.log("[Matching] Starting periodic matching job");
+
+    // Find all parcels that are still in MATCHING status from the last 24 hours
+    // Using only valid enum values
+    const matchingParcels = await Parcel.findAll({
+      where: {
+        status: {
+          [Op.in]: ["CREATED", "MATCHING"] // Only valid enum values
+        },
+        createdAt: {
+          [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+        },
+      },
+      attributes: ["id", "createdAt"],
+      order: [["createdAt", "DESC"]], // Process newer parcels first
+    });
+
+    console.log(`[Matching] Found ${matchingParcels.length} parcels to re-match`);
+
+    let totalMatched = 0;
+    let totalProcessed = 0;
+
+    for (const parcel of matchingParcels) {
+      try {
+        totalProcessed++;
+        const result = await matchParcelWithTravellers(parcel.id);
+        
+        if (result.success && result.requestsSent > 0) {
+          totalMatched++;
+          console.log(`[Matching] Periodic job: Parcel ${parcel.id} matched with ${result.requestsSent} travellers`);
+        }
+        
+        // Small delay to avoid overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+      } catch (error) {
+        console.error(`[Matching] Error in periodic matching for parcel ${parcel.id}:`, error.message);
+        // Continue with other parcels
+      }
+    }
+
+    console.log(`[Matching] Periodic matching completed: ${totalMatched}/${totalProcessed} parcels found new matches`);
+
+    return {
+      success: true,
+      totalProcessed,
+      totalMatched,
+      message: `Processed ${totalProcessed} parcels, found new matches for ${totalMatched}`,
+    };
+  } catch (error) {
+    console.error("[Matching] Error in periodic matching job:", error.message);
+    throw error;
+  }
 }

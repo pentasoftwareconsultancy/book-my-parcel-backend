@@ -84,10 +84,10 @@ export const updateKYCStatus = async (req, res, next) => {
 export const getTravelerDeliveries = async (req, res, next) => {
   try {
     const data = await travellerService.fetchTravellerDeliveries(
-      req.user.id, // ✅
+      req.user.id,
       req.query
     );
-    return responseSuccess(res, data, "Deliveries fetched successfully");
+    return responseSuccess(res, "Deliveries fetched successfully", data);
   } catch (error) {
     console.error("getTravelerDeliveries ERROR:", error.message);
     next(error);
@@ -103,7 +103,7 @@ export const getTravelerStats = async (req, res, next) => {
     const stats = await travellerService.fetchTravellerStats(
       req.user.id // ✅
     );
-    return responseSuccess(res, { stats }, "Stats fetched successfully");
+    return responseSuccess(res, "Stats fetched successfully", { stats });
   } catch (error) {
     console.error("getTravelerStats ERROR:", error.message);
     next(error);
@@ -112,8 +112,68 @@ export const getTravelerStats = async (req, res, next) => {
 
 
 /* ─────────────────────────────
-   CREATE ROUTE
+   DELIVERY STATUS & OTP MANAGEMENT  ✅ NEW
 ───────────────────────────── */
+
+/**
+ * Update booking status (CONFIRMED → PICKUP)
+ */
+export const updateBookingStatus = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { status } = req.body;
+    
+    const result = await travellerService.updateBookingStatus(
+      bookingId,
+      status,
+      req.user.id
+    );
+    
+    return responseSuccess(res, "Status updated successfully", result);
+  } catch (error) {
+    console.error("updateBookingStatus ERROR:", error.message);
+    next(error);
+  }
+};
+
+/**
+ * Generate OTP for pickup/delivery
+ */
+export const generateOTP = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { type } = req.body; // 'pickup' or 'delivery'
+    
+    const result = await travellerService.generateOTP(bookingId, type);
+    
+    return responseSuccess(res, "OTP generated successfully", result);
+  } catch (error) {
+    console.error("generateOTP ERROR:", error.message);
+    next(error);
+  }
+};
+
+/**
+ * Verify OTP and update status
+ */
+export const verifyOTP = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { otp, type } = req.body; // type: 'pickup' or 'delivery'
+    
+    const result = await travellerService.verifyOTPAndUpdateStatus(
+      bookingId,
+      otp,
+      type,
+      req.user.id
+    );
+    
+    return responseSuccess(res, "OTP verified successfully", result);
+  } catch (error) {
+    console.error("verifyOTP ERROR:", error.message);
+    next(error);
+  }
+};
 export const createRoute = async (req, res, next) => {
   try {
     const data = await travellerService.createRoute(req.user.id, req.body); // ✅

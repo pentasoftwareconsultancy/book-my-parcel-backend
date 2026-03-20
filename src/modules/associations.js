@@ -40,6 +40,9 @@ import RoutePlace from "./traveller/routePlace.model.js";
 import ParcelRequest from "./matching/parcelRequest.model.js";
 import ParcelAcceptance from "./matching/parcelAcceptance.model.js";
 
+/* USER DEVICE TOKENS */
+import UserDeviceToken from "./user/userDeviceToken.model.js";
+
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
    =========================== */
@@ -277,7 +280,8 @@ export {
   TravellerRoute,
   RoutePlace,
   ParcelRequest,
-  ParcelAcceptance
+  ParcelAcceptance,
+  UserDeviceToken
 };
 
 
@@ -305,3 +309,9 @@ Parcel.hasMany(ParcelAcceptance, { foreignKey: "parcel_id", as: "acceptances" })
 // ParcelAcceptance ↔ User (N-1) - for traveller
 ParcelAcceptance.belongsTo(User, { foreignKey: "traveller_id", as: "traveller" });
 User.hasMany(ParcelAcceptance, { foreignKey: "traveller_id", as: "acceptedParcels" });
+
+/* ===========================
+   USER ↔ DEVICE TOKENS (1–N)
+   =========================== */
+User.hasMany(UserDeviceToken, { foreignKey: "user_id", onDelete: "CASCADE", as: "deviceTokens" });
+UserDeviceToken.belongsTo(User, { foreignKey: "user_id", as: "user" });

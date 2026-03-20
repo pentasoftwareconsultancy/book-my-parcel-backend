@@ -6,19 +6,28 @@ import Parcel from "../modules/parcel/parcel.model.js";
 
 // ─── Helper: get next serial number ──────────────────────────────────────────
 async function getNextSerial(Model, field, prefix) {
-  const lastRecord = await Model.findOne({
+  // Get the highest existing serial number
+  const records = await Model.findAll({
     where: {
       [field]: { [Op.like]: `${prefix}%` },
     },
-    order: [["createdAt", "DESC"]],
+    attributes: [field],
+    order: [[field, "DESC"]],
+    limit: 100, // Get top 100 to find the highest number
   });
 
-  let next = 1;
-  if (lastRecord?.[field]) {
-    const last = parseInt(lastRecord[field].slice(-4), 10);
-    if (!isNaN(last)) next = last + 1;
+  let maxSerial = 0;
+  for (const record of records) {
+    if (record[field]) {
+      const serialStr = record[field].slice(prefix.length);
+      const serial = parseInt(serialStr, 10);
+      if (!isNaN(serial) && serial > maxSerial) {
+        maxSerial = serial;
+      }
+    }
   }
-  return String(next).padStart(4, "0");
+
+  return String(maxSerial + 1).padStart(4, "0");
 }
 
 // ─── Parcel ID → BMP-PRC-0001 ────────────────────────────────────────────────

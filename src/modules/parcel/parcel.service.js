@@ -7,6 +7,7 @@ import User from '../user/user.model.js';
 import UserProfile from '../user/userProfile.model.js';
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
+import ParcelAcceptance from "../matching/parcelAcceptance.model.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
 import { BOOKING_STATUS, BOOKING_TRANSITIONS } from "../../utils/constants.js";
 import { generateParcelId } from "../../utils/idGenerator.js";
@@ -201,7 +202,6 @@ export async function createParcelRequest(data, files) {
   data.price_quote = data.price_quote && !isNaN(data.price_quote) ? Number(data.price_quote) : null;
 
   const photoPaths = files?.length ? await uploadFiles(files) : [];
-  const parcel_ref = await generateParcelId();
 
   // ── Step 1: Enrich addresses via Google APIs (OUTSIDE transaction) ──
   const [pickupEnriched, deliveryEnriched] = await Promise.all([
@@ -244,44 +244,68 @@ export async function createParcelRequest(data, files) {
     }
   }
 
-  // ── Step 3: DB transaction – create addresses and parcel ──
-  const t = await sequelize.transaction();
-  try {
-    const pickupAddress   = await getOrCreateAddress(pickupEnriched,   "pickup",   data.user_id, t);
-    const deliveryAddress = await getOrCreateAddress(deliveryEnriched, "delivery", data.user_id, t);
+  // ── Step 3: DB transaction with retry logic for duplicate parcel_ref ──
+  let retryCount = 0;
+  const maxRetries = 3;
 
-    const parcel = await Parcel.create(
-      {
-        user_id:               data.user_id,
-        parcel_ref,
-        package_size:          data.package_size,
-        weight:                data.weight,
-        length:                data.length     || null,
-        width:                 data.width      || null,
-        height:                data.height     || null,
-        description:           data.description || null,
-        parcel_type:           data.parcel_type  || null, // user's content type e.g. "Documents"
-        value:                 data.value      || null,
-        notes:                 data.notes      || null,
-        photos:                photoPaths,
-        pickup_address_id:     pickupAddress.id,
-        delivery_address_id:   deliveryAddress.id,
-        selected_partner_id:   data.selected_partner_id || null,
-        price_quote:           data.price_quote || null,
-        route_distance_km:     routeDistance,
-        route_duration_minutes: routeDuration,
-        intermediate_cities:   intermediateCities,
-        route_geometry:        routeGeometry,
-        status:                BOOKING_STATUS.CREATED,
-      },
-      { transaction: t }
-    );
+  while (retryCount < maxRetries) {
+    const parcel_ref = await generateParcelId();
+    const t = await sequelize.transaction();
+    
+    try {
+      const pickupAddress   = await getOrCreateAddress(pickupEnriched,   "pickup",   data.user_id, t);
+      const deliveryAddress = await getOrCreateAddress(deliveryEnriched, "delivery", data.user_id, t);
 
-    await t.commit();
-    return { parcel, pickupAddress, deliveryAddress };
-  } catch (error) {
-    await t.rollback();
-    throw error;
+      const parcel = await Parcel.create(
+        {
+          user_id:               data.user_id,
+          parcel_ref,
+          package_size:          data.package_size,
+          weight:                data.weight,
+          length:                data.length     || null,
+          width:                 data.width      || null,
+          height:                data.height     || null,
+          description:           data.description || null,
+          parcel_type:           data.parcel_type  || null, // user's content type e.g. "Documents"
+          value:                 data.value      || null,
+          notes:                 data.notes      || null,
+          photos:                photoPaths,
+          pickup_address_id:     pickupAddress.id,
+          delivery_address_id:   deliveryAddress.id,
+          selected_partner_id:   data.selected_partner_id || null,
+          price_quote:           data.price_quote || null,
+          route_distance_km:     routeDistance,
+          route_duration_minutes: routeDuration,
+          intermediate_cities:   intermediateCities,
+          route_geometry:        routeGeometry,
+          status:                BOOKING_STATUS.CREATED,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+      return { parcel, pickupAddress, deliveryAddress };
+    } catch (error) {
+      await t.rollback();
+      
+      // Check if it's a unique constraint error on parcel_ref
+      if (error.name === 'SequelizeUniqueConstraintError' && 
+          error.fields && error.fields.parcel_ref) {
+        retryCount++;
+        console.log(`[Parcel] Duplicate parcel_ref ${parcel_ref}, retrying... (${retryCount}/${maxRetries})`);
+        
+        if (retryCount >= maxRetries) {
+          throw new Error('Failed to generate unique parcel reference after multiple attempts');
+        }
+        
+        // Wait a bit before retrying to avoid race conditions
+        await new Promise(resolve => setTimeout(resolve, 100));
+        continue;
+      }
+      
+      // For other errors, throw immediately
+      throw error;
+    }
   }
 }
 
@@ -292,6 +316,29 @@ export async function getUserParcelRequests(userId) {
       { model: Address, as: "pickupAddress" },
       { model: Address, as: "deliveryAddress" },
       { model: Booking, as: "booking" },
+      {
+        model: ParcelAcceptance,
+        as: "acceptances",
+        include: [
+          {
+            model: User,
+            as: "traveller",
+            attributes: ["id", "email", "phone_number"],
+            include: [
+              {
+                model: TravellerProfile,
+                as: "travellerProfile",
+                attributes: ["rating", "total_deliveries", "vehicle_type", "vehicle_number"]
+              },
+              {
+                model: UserProfile,
+                as: "profile",
+                attributes: ["name"]
+              }
+            ]
+          }
+        ]
+      }
     ],
     order: [["createdAt", "DESC"]],
   });

@@ -13,6 +13,7 @@
 import 'dotenv/config.js';
 import sequelize from '../src/config/database.config.js';
 import TravellerRoute from '../src/modules/traveller/travellerRoute.model.js';
+import { Op } from 'sequelize';
 import {
   decodePolyline,
   createLineString,
@@ -28,7 +29,7 @@ async function migrateRoutesToPostGIS() {
     const routes = await TravellerRoute.findAll({
       where: {
         route_geometry: {
-          [sequelize.Op.ne]: null,
+          [Op.ne]: null,
         },
       },
       attributes: ['id', 'route_geometry', 'route_geom'],
