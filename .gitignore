@@ -23,4 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment variables
 .env
+
+# User uploads and generated content (from website)
+uploads/**/*
+!uploads/
+!uploads/*/
+!uploads/*/.gitkeep

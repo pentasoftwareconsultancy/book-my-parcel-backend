@@ -1,6 +1,8 @@
 import { body, validationResult } from "express-validator";
+import Joi from "joi";
 
-// Common error handler
+// ─── express-validator helpers ────────────────────────────────────────────────
+
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -96,3 +98,83 @@ export const validateCommonFields = [
 
   handleValidation
 ];
+
+// ─── Joi: Parcel Request Schema ───────────────────────────────────────────────
+
+const addressSchema = Joi.object({
+  name:      Joi.string().min(2).max(100).required(),
+  address:   Joi.string().min(5).max(300).required(),
+  city:      Joi.string().min(2).max(100).required(),
+  state:     Joi.string().min(2).max(100).required(),
+  pincode:   Joi.string().pattern(/^\d{6}$/).required().messages({
+    "string.pattern.base": "pincode must be exactly 6 digits",
+  }),
+  country:   Joi.string().min(2).max(100).required(),
+  phone:     Joi.string().pattern(/^[6-9]\d{9}$|^\+\d{10,15}$/).required().messages({
+    "string.pattern.base": "phone must be 10 digits (Indian) or 10-15 digits with country code",
+  }),
+  alt_phone: Joi.string().pattern(/^[6-9]\d{9}$|^\+\d{10,15}$|^$/).optional().allow("", null),
+  aadhar_no: Joi.string().pattern(/^\d{12}$/).optional().allow("", null).messages({
+    "string.pattern.base": "aadhar_no must be exactly 12 digits",
+  }),
+  aadhaar:   Joi.string().pattern(/^\d{12}$/).optional().allow("", null).messages({
+    "string.pattern.base": "aadhaar must be exactly 12 digits",
+  }),
+  place_id:  Joi.string().max(500).optional().allow("", null),
+  datetime:  Joi.string().optional().allow("", null), // pickup schedule field from frontend
+});
+
+export const parcelRequestSchema = Joi.object({
+  package_size:   Joi.string().valid("small", "medium", "large", "extra_large").required(),
+  weight:         Joi.number().min(0).optional(),
+  length:         Joi.number().min(0).optional().allow(null),
+  width:          Joi.number().min(0).optional().allow(null),
+  height:         Joi.number().min(0).optional().allow(null),
+  description:    Joi.string().max(500).optional().allow("", null),
+  parcel_type:    Joi.string().max(100).optional().allow("", null), // user content type e.g. "Documents"
+  value:          Joi.number().min(0).optional().allow(null),
+  notes:          Joi.string().max(500).optional().allow("", null),
+  price_quote:    Joi.number().min(0).optional().allow(null),
+  pickup_address:   addressSchema.required(),
+  delivery_address: addressSchema.required(),
+}).options({ allowUnknown: false });
+
+// ─── Middleware: Parse JSON strings from multipart form-data ──────────────────
+// When the client sends a multipart/form-data request (for file uploads),
+// nested objects like pickup_address arrive as JSON strings.
+// This middleware parses them back into objects before validation.
+export function parseJsonFields(...fieldNames) {
+  return (req, _res, next) => {
+    for (const field of fieldNames) {
+      if (typeof req.body[field] === "string") {
+        try {
+          req.body[field] = JSON.parse(req.body[field]);
+        } catch {
+          // Leave as-is; Joi validation will catch the type error
+        }
+      }
+    }
+    next();
+  };
+}
+
+// ─── Middleware: Joi schema validation factory ────────────────────────────────
+export function validateRequest(schema) {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req.body, { abortEarly: false });
+    if (error) {
+      console.error('[Validation] Request body:', JSON.stringify(req.body, null, 2));
+      console.error('[Validation] Validation errors:', error.details);
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: error.details.map((d) => ({
+          field:   d.path.join("."),
+          message: d.message,
+        })),
+      });
+    }
+    req.body = value; // replace with Joi-sanitised value
+    next();
+  };
+}
