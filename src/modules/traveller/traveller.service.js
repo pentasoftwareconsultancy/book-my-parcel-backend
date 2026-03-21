@@ -9,6 +9,7 @@ import UserProfile from "../user/userProfile.model.js";
 import Booking from "../booking/booking.model.js";
 import Parcel from "../parcel/parcel.model.js";
 import Address from "../parcel/address.model.js";
+import ParcelRequest from "../matching/parcelRequest.model.js";
 import { KYC_STATUS } from "../../utils/constants.js";
 
 
@@ -248,6 +249,151 @@ export async function fetchTravellerDeliveries(travellerUserId, query) {
       totalPages: Math.ceil(count / parseInt(limit)),
     },
   };
+}
+
+// New function to fetch parcel requests for dashboard
+export async function fetchTravellerParcelRequests(travellerUserId, query = {}) {
+  try {
+    const { status, page = 1, limit = 10 } = query;
+
+    // Build where clause for parcel requests
+    const whereClause = { traveller_id: travellerUserId };
+    if (status) {
+      const statusArray = status.split(",").map(s => s.trim());
+      whereClause.status = { [Op.in]: statusArray };
+    }
+
+    console.log('Fetching parcel requests with where clause:', whereClause);
+
+    const { count, rows: parcelRequests } = await ParcelRequest.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Parcel,
+          as: "parcel",
+          required: true,
+          include: [
+            {
+              model: Address,
+              as: "pickupAddress",
+              attributes: ["city", "address", "state"],
+            },
+            {
+              model: Address,
+              as: "deliveryAddress", 
+              attributes: ["city", "address", "state"],
+            },
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "phone_number"],
+              include: [{
+                model: UserProfile,
+                as: "profile",
+                attributes: ["name"],
+              }],
+            },
+          ],
+        },
+        {
+          model: TravellerRoute,
+          as: "route",
+          attributes: ["id", "vehicle_type", "max_weight_kg", "status"],
+          include: [
+            {
+              model: Address,
+              as: "originAddress",
+              attributes: ["city", "state"],
+            },
+            {
+              model: Address,
+              as: "destAddress", 
+              attributes: ["city", "state"],
+            },
+          ],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit),
+    });
+
+    console.log(`Found ${count} parcel requests for traveller ${travellerUserId}`);
+
+    const requests = parcelRequests.map(request => {
+      const parcel = request.parcel;
+      const sender = parcel?.user;
+
+      return {
+        id: request.id,
+        parcelId: parcel?.id,
+        requestId: `REQ${request.id.substring(0, 8).toUpperCase()}`,
+        status: request.status,
+        customer: sender?.profile?.name || "Unknown Customer",
+        customerPhone: sender?.phone_number || "",
+        pickup: {
+          city: parcel?.pickupAddress?.city || "",
+          address: parcel?.pickupAddress?.address || "",
+          state: parcel?.pickupAddress?.state || "",
+        },
+        drop: {
+          city: parcel?.deliveryAddress?.city || "",
+          address: parcel?.deliveryAddress?.address || "",
+          state: parcel?.deliveryAddress?.state || "",
+        },
+        amount: parcel?.price_quote || 0,
+        sentDate: request.sent_at?.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        respondedDate: request.responded_at?.toLocaleDateString("en-US", {
+          month: "short", 
+          day: "numeric",
+          year: "numeric",
+        }),
+        package: {
+          size: parcel?.package_size || "Medium",
+          weight: `${parcel?.weight || 0} kg`,
+          type: parcel?.parcel_type || "Standard",
+        },
+        // Request specific info
+        matchScore: request.match_score,
+        detourKm: request.detour_km,
+        detourPercentage: request.detour_percentage,
+        expiresAt: request.expires_at,
+        route: {
+          id: request.route?.id,
+          vehicleType: request.route?.vehicle_type,
+          maxWeight: request.route?.max_weight_kg,
+          status: request.route?.status,
+          origin: request.route?.originAddress ? 
+            `${request.route.originAddress.city}, ${request.route.originAddress.state}` : 
+            "Unknown Origin",
+          destination: request.route?.destAddress ? 
+            `${request.route.destAddress.city}, ${request.route.destAddress.state}` : 
+            "Unknown Destination",
+        },
+        // Additional parcel info
+        parcelRef: parcel?.parcel_ref || "",
+        urgent: parcel?.is_urgent || false,
+        specialInstructions: parcel?.special_instructions || "",
+      };
+    });
+
+    return {
+      requests,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / parseInt(limit)),
+      },
+    };
+  } catch (error) {
+    console.error('Error in fetchTravellerParcelRequests:', error);
+    throw error;
+  }
 }
 
 

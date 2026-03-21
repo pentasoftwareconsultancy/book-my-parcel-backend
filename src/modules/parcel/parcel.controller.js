@@ -37,14 +37,14 @@ export const createParcel = async (req, res) => {
     });
 
     // Return the parcel ID and booking ID to frontend
-    return responseSuccess(res, "Parcel request created successfully", {
+    return responseSuccess(res, {
       id: result.parcel.id,
       // bookingId: result.booking.id,
       parcel: result.parcel,
       booking: result.booking,
       pickupAddress: result.pickupAddress,
       deliveryAddress: result.deliveryAddress
-    });
+    }, "Parcel request created successfully");
   } catch (error) {
     console.error("Parcel creation error:", error.message);
     console.error("Stack trace:", error.stack);
@@ -62,8 +62,8 @@ export const getUserRequests = async (req, res) => {
 
     return responseSuccess(
       res,
-      "Parcel requests fetched successfully",
-      result
+      result,
+      "Parcel requests fetched successfully"
     );
   } catch (error) {
     console.error("Get parcel error:", error);
@@ -84,8 +84,8 @@ export const getParcelById = async (req, res) => {
 
     return responseSuccess(
       res,
-      "Parcel fetched successfully",
-      result
+      result,
+      "Parcel fetched successfully"
     );
   } catch (error) {
     console.error("Get parcel error:", error);

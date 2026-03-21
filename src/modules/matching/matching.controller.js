@@ -55,11 +55,11 @@ export async function findTravellers(req, res) {
       }
     }
 
-    return responseSuccess(res, "Matching completed", {
+    return responseSuccess(res, {
       parcel_id: parcelId,
       requests_sent: result.requestsSent,
       message: result.message,
-    });
+    }, "Matching completed");
   } catch (error) {
     console.error("[Matching] Error finding travellers:", error.message);
     return responseError(res, error.message || "Failed to find travellers", 500);
@@ -161,16 +161,65 @@ export async function acceptRequest(req, res) {
       }
     );
 
-    return responseSuccess(res, "Request accepted successfully", {
+    return responseSuccess(res, {
       acceptance_id: acceptance.id,
       parcel_id: request.parcel_id,
       traveller_id: travellerId,
       acceptance_price: acceptance.acceptance_price,
-    });
+    }, "Request accepted successfully");
   } catch (error) {
     await t.rollback();
     console.error("[Matching] Error accepting request:", error.message);
     return responseError(res, error.message || "Failed to accept request", 500);
+  }
+}
+
+// Reject parcel request
+export async function rejectRequest(req, res) {
+  const t = await sequelize.transaction();
+
+  try {
+    const { requestId } = req.params;
+    const travellerId = req.user.id;
+
+    // Find request
+    const request = await ParcelRequest.findByPk(requestId, { transaction: t });
+    if (!request) {
+      await t.rollback();
+      return responseError(res, "Request not found", 404);
+    }
+
+    // Verify request is still valid
+    if (request.status !== "SENT") {
+      await t.rollback();
+      return responseError(res, `Request already ${request.status.toLowerCase()}`, 400);
+    }
+
+    // Verify traveller matches
+    if (request.traveller_id !== travellerId) {
+      await t.rollback();
+      return responseError(res, "Unauthorized", 403);
+    }
+
+    // Update request status to rejected
+    await request.update(
+      {
+        status: "REJECTED",
+        responded_at: new Date(),
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    return responseSuccess(res, {
+      request_id: requestId,
+      status: "REJECTED",
+    }, "Request rejected successfully");
+  } catch (error) {
+    await t.rollback();
+    console.error("[Matching] Error rejecting request:", error.message);
+    return responseError(res, error.message || "Failed to reject request", 500);
   }
 }
 
@@ -186,12 +235,12 @@ export async function getAcceptances(req, res) {
         {
           model: Address,
           as: "pickupAddress",
-          attributes: ["latitude", "longitude", "address_line", "city"]
+          attributes: ["latitude", "longitude", "address", "city"]
         },
         {
           model: Address,
           as: "deliveryAddress", 
-          attributes: ["latitude", "longitude", "address_line", "city"]
+          attributes: ["latitude", "longitude", "address", "city"]
         }
       ]
     });
@@ -284,7 +333,7 @@ export async function getAcceptances(req, res) {
       } : null
     };
 
-    return responseSuccess(res, "Acceptances retrieved successfully", responseData);
+    return responseSuccess(res, responseData, "Acceptances retrieved successfully");
   } catch (error) {
     console.error("[Matching] Error getting acceptances:", error.message);
     return responseError(res, error.message || "Failed to get acceptances", 500);
@@ -438,14 +487,14 @@ export async function selectTraveller(req, res) {
       }
     );
 
-    return responseSuccess(res, "Traveller selected successfully", {
+    return responseSuccess(res, {
       booking_id: booking.id,
       booking_ref: booking.booking_ref,
       parcel_id: parcelId,
       traveller_id,
       final_price: finalPrice,
       status: "CONFIRMED",
-    });
+    }, "Traveller selected successfully");
   } catch (error) {
     await t.rollback();
     console.error("[Matching] Error selecting traveller:", error.message);
@@ -515,7 +564,7 @@ export async function getTravellerRequests(req, res) {
       expires_at: req.expires_at,
     }));
 
-    return responseSuccess(res, "Requests retrieved successfully", formattedRequests);
+    return responseSuccess(res, formattedRequests, "Requests retrieved successfully");
   } catch (error) {
     console.error("[Matching] Error getting traveller requests:", error.message);
     console.error(error.stack);
@@ -532,15 +581,114 @@ export async function runPeriodicMatchingController(req, res) {
 
     const result = await runPeriodicMatching();
 
-    return responseSuccess(res, result.message, {
+    return responseSuccess(res, {
       totalProcessed: result.totalProcessed,
       totalMatched: result.totalMatched,
-    });
+    }, result.message);
   } catch (error) {
     console.error("[Matching] Error in periodic matching:", error.message);
     return responseError(res, error.message || "Failed to run periodic matching", 500);
   }
 }
+// ─── GET /api/parcel/:id/route-geometry ───────────────────────────────────
+/**
+ * Get route geometry for acceptances (for map visualization)
+ */
+export async function getRouteGeometry(req, res) {
+  try {
+    const { id: parcelId } = req.params;
+
+    // Verify parcel exists and belongs to user
+    const parcel = await Parcel.findByPk(parcelId);
+    if (!parcel) {
+      return responseError(res, "Parcel not found", 404);
+    }
+
+    if (parcel.user_id !== req.user.id) {
+      return responseError(res, "Unauthorized", 403);
+    }
+
+    // Get acceptances with route geometry
+    const acceptances = await ParcelAcceptance.findAll({
+      where: { parcel_id: parcelId },
+      include: [
+        {
+          model: ParcelRequest,
+          as: "request",
+          include: [
+            {
+              model: TravellerRoute,
+              as: "route",
+              attributes: ["id"],
+            }
+          ]
+        },
+        {
+          model: User,
+          as: "traveller",
+          attributes: ["id", "email"],
+        },
+      ],
+    });
+
+    // Get route geometries from database
+    const routeGeometries = [];
+    for (const acceptance of acceptances) {
+      const routeId = acceptance.request?.route?.id;
+      if (routeId) {
+        try {
+          const geometry = await sequelize.query(
+            `SELECT 
+              id,
+              ST_AsGeoJSON(route_geom) as geometry,
+              ST_AsText(ST_StartPoint(route_geom)) as start_point,
+              ST_AsText(ST_EndPoint(route_geom)) as end_point
+            FROM traveller_routes
+            WHERE id = :routeId`,
+            {
+              replacements: { routeId },
+              type: sequelize.QueryTypes.SELECT,
+            }
+          );
+
+          if (geometry[0]) {
+            const startPoint = geometry[0].start_point ? 
+              geometry[0].start_point.match(/POINT\(([^ ]+) ([^ ]+)\)/) : null;
+            const endPoint = geometry[0].end_point ? 
+              geometry[0].end_point.match(/POINT\(([^ ]+) ([^ ]+)\)/) : null;
+
+            routeGeometries.push({
+              acceptance_id: acceptance.id,
+              traveller_id: acceptance.traveller_id,
+              traveller_email: acceptance.traveller.email,
+              route_id: routeId,
+              geometry: JSON.parse(geometry[0].geometry),
+              start_point: startPoint ? {
+                lng: parseFloat(startPoint[1]),
+                lat: parseFloat(startPoint[2])
+              } : null,
+              end_point: endPoint ? {
+                lng: parseFloat(endPoint[1]), 
+                lat: parseFloat(endPoint[2])
+              } : null,
+            });
+          }
+        } catch (error) {
+          console.error(`[Matching] Error getting geometry for route ${routeId}:`, error.message);
+        }
+      }
+    }
+
+    return responseSuccess(res, {
+      parcel_id: parcelId,
+      route_geometries: routeGeometries,
+    }, "Route geometries retrieved successfully");
+  } catch (error) {
+    console.error("[Matching] Error getting route geometry:", error.message);
+    return responseError(res, error.message || "Failed to get route geometry", 500);
+  }
+}
+
 // ─── POST /api/matching/test-parcel/:id ────────────────────────────────────
 /**
  * Manually trigger matching for a specific parcel (useful for testing)
@@ -552,12 +700,12 @@ export async function testParcelMatching(req, res) {
 
     const result = await matchParcelWithTravellers(id);
 
-    return responseSuccess(res, `Matching completed for parcel ${id}`, {
+    return responseSuccess(res, {
       parcelId: id,
       requestsSent: result.requestsSent,
       message: result.message,
       requests: result.requests || [],
-    });
+    }, `Matching completed for parcel ${id}`);
   } catch (error) {
     console.error(`[Matching] Error in manual parcel matching for ${req.params.id}:`, error.message);
     return responseError(res, error.message || "Failed to match parcel", 500);

@@ -9,11 +9,13 @@ import { responseSuccess, responseError } from "../../utils/response.util.js";
 import {
   findTravellers,
   acceptRequest,
+  rejectRequest,
   getAcceptances,
   selectTraveller,
   getTravellerRequests,
   runPeriodicMatchingController,
   testParcelMatching,
+  getRouteGeometry,
 } from "./matching.controller.js";
 import { selectTravellerSchema } from "./matching.validation.js";
 
@@ -27,6 +29,9 @@ router.post("/:id/find-travellers", authMiddleware, findTravellers);
 // GET /api/parcel/:id/acceptances - Get acceptances for a parcel
 router.get("/:id/acceptances", authMiddleware, getAcceptances);
 
+// GET /api/parcel/:id/route-geometry - Get route geometry for acceptances
+router.get("/:id/route-geometry", authMiddleware, getRouteGeometry);
+
 // POST /api/parcel/:id/select-traveller - Select a traveller
 router.post("/:id/select-traveller", authMiddleware, validateRequest(selectTravellerSchema), selectTraveller);
 
@@ -34,6 +39,9 @@ router.post("/:id/select-traveller", authMiddleware, validateRequest(selectTrave
 
 // POST /api/traveller/requests/:requestId/accept - Accept a request
 router.post("/requests/:requestId/accept", authMiddleware, acceptRequest);
+
+// POST /api/traveller/requests/:requestId/reject - Reject a request
+router.post("/requests/:requestId/reject", authMiddleware, rejectRequest);
 
 // GET /api/traveller/requests - Get all requests for traveller
 router.get("/requests", authMiddleware, getTravellerRequests);
@@ -112,7 +120,7 @@ router.get("/test-traveller-requests/:travellerId", async (req, res) => {
       expires_at: req.expires_at,
     }));
 
-    return responseSuccess(res, "Test requests retrieved successfully", formattedRequests);
+    return responseSuccess(res, formattedRequests, "Test requests retrieved successfully");
   } catch (error) {
     console.error("[Test] Error getting traveller requests:", error.message);
     console.error(error.stack);

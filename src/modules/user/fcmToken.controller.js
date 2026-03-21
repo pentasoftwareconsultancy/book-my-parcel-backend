@@ -17,9 +17,9 @@ export async function storeFCMTokenEndpoint(req, res) {
       return responseError(res, result.error || "Failed to store FCM token", 500);
     }
 
-    return responseSuccess(res, "FCM token stored successfully", {
+    return responseSuccess(res, {
       message: result.message,
-    });
+    }, "FCM token stored successfully");
   } catch (error) {
     console.error("[FCM] Error storing token:", error.message);
     return responseError(res, error.message || "Failed to store FCM token", 500);
@@ -42,9 +42,9 @@ export async function removeFCMTokenEndpoint(req, res) {
       return responseError(res, result.error || "Failed to remove FCM token", 500);
     }
 
-    return responseSuccess(res, "FCM token removed successfully", {
+    return responseSuccess(res, {
       message: result.message,
-    });
+    }, "FCM token removed successfully");
   } catch (error) {
     console.error("[FCM] Error removing token:", error.message);
     return responseError(res, error.message || "Failed to remove FCM token", 500);

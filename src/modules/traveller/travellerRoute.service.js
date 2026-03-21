@@ -385,6 +385,35 @@ export async function createTravellerRoute(data, userId) {
       { transaction: t }
     );
 
+    // Convert polyline to PostGIS geometry if we have route data
+    if (routeGeometry) {
+      try {
+        const { polylineToLineString } = await import('../../services/polylineDecoder.service.js');
+        const linestring = polylineToLineString(routeGeometry);
+        
+        if (linestring) {
+          await sequelize.query(
+            `UPDATE traveller_routes 
+             SET route_geom = ST_GeomFromText(:linestring, 4326)
+             WHERE id = :routeId`,
+            {
+              replacements: {
+                linestring,
+                routeId: route.id,
+              },
+              transaction: t,
+            }
+          );
+          console.log(`[TravellerRoute] Populated PostGIS geometry for route ${route.id}`);
+        } else {
+          console.warn(`[TravellerRoute] Failed to decode polyline for route ${route.id}`);
+        }
+      } catch (error) {
+        console.error(`[TravellerRoute] Error converting polyline to geometry for route ${route.id}:`, error.message);
+        // Don't fail the transaction for geometry conversion errors
+      }
+    }
+
     // Phase 3: Extract and store places for Place-ID based matching
     await extractAndStorePlaces(route.id, intermediateData, t);
 

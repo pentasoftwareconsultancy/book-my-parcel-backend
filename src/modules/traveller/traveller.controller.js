@@ -87,7 +87,7 @@ export const getTravelerDeliveries = async (req, res, next) => {
       req.user.id,
       req.query
     );
-    return responseSuccess(res, "Deliveries fetched successfully", data);
+    return responseSuccess(res, data, "Deliveries fetched successfully");
   } catch (error) {
     console.error("getTravelerDeliveries ERROR:", error.message);
     next(error);
@@ -103,9 +103,26 @@ export const getTravelerStats = async (req, res, next) => {
     const stats = await travellerService.fetchTravellerStats(
       req.user.id // ✅
     );
-    return responseSuccess(res, "Stats fetched successfully", { stats });
+    return responseSuccess(res, { stats }, "Stats fetched successfully");
   } catch (error) {
     console.error("getTravelerStats ERROR:", error.message);
+    next(error);
+  }
+};
+
+
+/* ─────────────────────────────
+   GET TRAVELLER PARCEL REQUESTS FOR DASHBOARD  ✅
+───────────────────────────── */
+export const getTravelerParcelRequests = async (req, res, next) => {
+  try {
+    const data = await travellerService.fetchTravellerParcelRequests(
+      req.user.id,
+      req.query
+    );
+    return responseSuccess(res, data, "Parcel requests fetched successfully");
+  } catch (error) {
+    console.error("getTravelerParcelRequests ERROR:", error.message);
     next(error);
   }
 };
@@ -129,7 +146,7 @@ export const updateBookingStatus = async (req, res, next) => {
       req.user.id
     );
     
-    return responseSuccess(res, "Status updated successfully", result);
+    return responseSuccess(res, result, "Status updated successfully");
   } catch (error) {
     console.error("updateBookingStatus ERROR:", error.message);
     next(error);
@@ -146,7 +163,7 @@ export const generateOTP = async (req, res, next) => {
     
     const result = await travellerService.generateOTP(bookingId, type);
     
-    return responseSuccess(res, "OTP generated successfully", result);
+    return responseSuccess(res, result, "OTP generated successfully");
   } catch (error) {
     console.error("generateOTP ERROR:", error.message);
     next(error);
@@ -168,7 +185,7 @@ export const verifyOTP = async (req, res, next) => {
       req.user.id
     );
     
-    return responseSuccess(res, "OTP verified successfully", result);
+    return responseSuccess(res, result, "OTP verified successfully");
   } catch (error) {
     console.error("verifyOTP ERROR:", error.message);
     next(error);
@@ -194,7 +211,7 @@ export const getMyRoutes = async (req, res, next) => {
       req.user.id, // ✅
       { status, page, limit }
     );
-    return successResponse(res, data, "Routes fetched");
+    return responseSuccess(res, data, "Routes fetched");
   } catch (err) {
     next(err);
   }
@@ -207,7 +224,7 @@ export const getMyRoutes = async (req, res, next) => {
 export const getRouteById = async (req, res, next) => {
   try {
     const data = await travellerService.getRouteById(req.params.id);
-    return successResponse(res, data, "Route fetched");
+    return responseSuccess(res, data, "Route fetched");
   } catch (err) {
     next(err);
   }
@@ -224,7 +241,7 @@ export const updateRoute = async (req, res, next) => {
       req.user.id, // ✅
       req.body
     );
-    return successResponse(res, data, "Route updated successfully");
+    return responseSuccess(res, data, "Route updated successfully");
   } catch (err) {
     next(err);
   }
@@ -237,7 +254,7 @@ export const updateRoute = async (req, res, next) => {
 export const deleteRoute = async (req, res, next) => {
   try {
     await travellerService.deleteRoute(req.params.id, req.user.id); // ✅
-    return successResponse(res, null, "Route deleted successfully");
+    return responseSuccess(res, null, "Route deleted successfully");
   } catch (err) {
     next(err);
   }

@@ -25,7 +25,7 @@ export async function createRoute(req, res) {
       }
     });
 
-    return responseSuccess(res, "Route created successfully", {
+    return responseSuccess(res, {
       id: route.id,
       route_ref: routeRef,
       origin: {
@@ -59,7 +59,7 @@ export async function createRoute(req, res) {
       landmarks_nearby: route.landmarks_nearby,
       status: route.status,
       created_at: route.created_at,
-    });
+    }, "Route created successfully");
   } catch (error) {
     console.error("[TravellerRoute] Create error:", error);
     return responseError(res, error.message, 500);
@@ -72,7 +72,7 @@ export async function getRoutes(req, res) {
     const userId = req.user.id;
     const routes = await getTravellerRoutes(userId);
 
-    return responseSuccess(res, "Routes retrieved successfully", routes);
+    return responseSuccess(res, routes, "Routes retrieved successfully");
   } catch (error) {
     console.error("[TravellerRoute] Get routes error:", error);
     return responseError(res, error.message, 500);
@@ -89,7 +89,7 @@ export async function getRoute(req, res) {
       return responseError(res, "Route not found", 404);
     }
 
-    return responseSuccess(res, "Route retrieved successfully", route);
+    return responseSuccess(res, route, "Route retrieved successfully");
   } catch (error) {
     console.error("[TravellerRoute] Get route error:", error);
     return responseError(res, error.message, 500);
