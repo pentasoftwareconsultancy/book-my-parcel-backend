@@ -8,4 +8,5 @@ const router = express.Router();
 router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
 router.get("/dashboard/stats", authMiddleware, ctrl.getTravelerStats);
 
+
 export default router;

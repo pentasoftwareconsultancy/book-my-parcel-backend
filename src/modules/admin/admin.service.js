@@ -2,7 +2,7 @@ import sequelize from "../../config/database.config.js";
 import { QueryTypes } from "sequelize";
 import TravellerKYC from "../traveller/travellerKYC.model.js";
 import User from "../user/user.model.js";
-import { KYC_STATUS } from "../../middlewares/role.middleware.js";
+import { KYC_STATUS } from "../../utils/constants.js";
 import Role from "../user/role.model.js";
 import UserRole from "../user/userRole.model.js";
 import Booking from "../booking/booking.model.js";

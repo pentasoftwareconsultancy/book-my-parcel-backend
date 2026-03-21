@@ -46,12 +46,12 @@ export function validateSignupData(userData) {
 
     // ✅ Name — only letters and spaces, min 2 characters
     if (!userData.name || !userData.name.trim()) {
-        errors.push("Name is required");
+        errors.push("Full name is required");
     } else {
         if (!/^[A-Za-z\s]+$/.test(userData.name))
-            errors.push("Name must contain only letters");
+            errors.push("Full name must contain only letters");
         if (userData.name.trim().length < 2)
-            errors.push("Name must be at least 2 characters");
+            errors.push("Full name must be at least 2 characters");
     }
 
     if (errors.length > 0) {
@@ -170,14 +170,9 @@ export const checkDuplicateEmail = async (email, userId = null) => {
     },
   });
 
-  const travellerExists = await TravellerProfile.findOne({
-    where: {
-      email,
-      ...(userId && { user_id: { [Op.ne]: userId } }),
-    },
-  });
+  
 
-  if (userExists || travellerExists) {
+  if (userExists ) {
     throw new Error("Email already exists");
   }
 };
@@ -191,14 +186,9 @@ export const checkDuplicatePhone = async (phone, userId = null) => {
     },
   });
 
-  const travellerExists = await TravellerProfile.findOne({
-    where: {
-      phone_number: phone,
-      ...(userId && { user_id: { [Op.ne]: userId } }),
-    },
-  });
+  
 
-  if (userExists || travellerExists) {
+  if (userExists ) {
     throw new Error("Phone number already exists");
   }
 };

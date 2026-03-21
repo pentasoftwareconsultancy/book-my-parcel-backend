@@ -10,15 +10,34 @@ const User = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
     },
 
-    name: DataTypes.STRING,
-    phone_number: DataTypes.STRING,
-    alternate_phone: DataTypes.STRING,
-    email: DataTypes.STRING,
-    password: DataTypes.STRING,
+    email: {
+      type: DataTypes.STRING,
+      unique: true,
+      allowNull: false,
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    phone_number: {
+      type: DataTypes.STRING,
+      unique: true,
+      allowNull: false,
+    },
+    alternate_phone: {
+      type: DataTypes.STRING,
+      allowNull: true,       
+      defaultValue: null,     
+    }, 
+    // is_active: {
+    //   type: DataTypes.BOOLEAN,
+    //   defaultValue: true,
+    // },
   },
   {
     timestamps: true,
-  },
+  }
+
 );
 
 export default User;
