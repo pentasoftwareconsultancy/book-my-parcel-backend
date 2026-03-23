@@ -34,6 +34,14 @@ import Address from "./parcel/address.model.js";
 
 // Route
 import TravellerRoute from "./traveller/travellerRoute.model.js";
+import RoutePlace from "./traveller/routePlace.model.js";
+
+/* MATCHING */
+import ParcelRequest from "./matching/parcelRequest.model.js";
+import ParcelAcceptance from "./matching/parcelAcceptance.model.js";
+
+/* USER DEVICE TOKENS */
+import UserDeviceToken from "./user/userDeviceToken.model.js";
 
 /* ===========================
    USER ↔ ROLE (MANY TO MANY)
@@ -205,6 +213,23 @@ TravellerRoute.belongsTo(TravellerProfile, {
   foreignKey: "traveller_profile_id",
   as: "travellerProfile"
 });
+
+// Phase 2: TravellerRoute ↔ Address associations
+TravellerRoute.belongsTo(Address, { as: "originAddress", foreignKey: "origin_address_id" });
+TravellerRoute.belongsTo(Address, { as: "destAddress", foreignKey: "dest_address_id" });
+Address.hasMany(TravellerRoute, { as: "originRoutes", foreignKey: "origin_address_id" });
+Address.hasMany(TravellerRoute, { as: "destRoutes", foreignKey: "dest_address_id" });
+
+// Phase 3: TravellerRoute ↔ RoutePlace associations (Place-ID matching)
+TravellerRoute.hasMany(RoutePlace, {
+  foreignKey: "route_id",
+  as: "places",
+  onDelete: "CASCADE"
+});
+RoutePlace.belongsTo(TravellerRoute, {
+  foreignKey: "route_id",
+  as: "route"
+});
 // // travellerkyc
 
 User.hasOne(TravellerKYC, {
@@ -248,7 +273,42 @@ export {
   WalletTransaction,
   Refund,
   ParcelTracking,
-  Address
+  Address,
+  TravellerRoute,
+  RoutePlace,
+  ParcelRequest,
+  ParcelAcceptance,
+  UserDeviceToken
 };
 
 
+
+/* ===========================
+   PHASE 3: PARCEL REQUEST & ACCEPTANCE
+   =========================== */
+
+// ParcelRequest ↔ Parcel (N-1)
+ParcelRequest.belongsTo(Parcel, { foreignKey: "parcel_id", as: "parcel" });
+Parcel.hasMany(ParcelRequest, { foreignKey: "parcel_id", as: "requests" });
+
+// ParcelRequest ↔ TravellerRoute (N-1)
+ParcelRequest.belongsTo(TravellerRoute, { foreignKey: "route_id", as: "route" });
+TravellerRoute.hasMany(ParcelRequest, { foreignKey: "route_id", as: "parcelRequests" });
+
+// ParcelAcceptance ↔ ParcelRequest (1-1)
+ParcelAcceptance.belongsTo(ParcelRequest, { foreignKey: "parcel_request_id", as: "request" });
+ParcelRequest.hasOne(ParcelAcceptance, { foreignKey: "parcel_request_id", as: "acceptance" });
+
+// ParcelAcceptance ↔ Parcel (N-1)
+ParcelAcceptance.belongsTo(Parcel, { foreignKey: "parcel_id", as: "parcel" });
+Parcel.hasMany(ParcelAcceptance, { foreignKey: "parcel_id", as: "acceptances" });
+
+// ParcelAcceptance ↔ User (N-1) - for traveller
+ParcelAcceptance.belongsTo(User, { foreignKey: "traveller_id", as: "traveller" });
+User.hasMany(ParcelAcceptance, { foreignKey: "traveller_id", as: "acceptedParcels" });
+
+/* ===========================
+   USER ↔ DEVICE TOKENS (1–N)
+   =========================== */
+User.hasMany(UserDeviceToken, { foreignKey: "user_id", onDelete: "CASCADE", as: "deviceTokens" });
+UserDeviceToken.belongsTo(User, { foreignKey: "user_id", as: "user" });

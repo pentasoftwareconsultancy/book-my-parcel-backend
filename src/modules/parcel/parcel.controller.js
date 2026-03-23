@@ -1,6 +1,8 @@
 import { createParcelRequest } from "./parcel.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
 import { getUserParcelRequests, getParcelById as getServiceParcelById } from "./parcel.service.js";
+import { matchParcelWithTravellers } from "../../services/matchingEngine.service.js";
+import { sendToTraveller } from "../../services/notification.service.js";
 
 export const createParcel = async (req, res) => {
   try {
@@ -9,17 +11,44 @@ export const createParcel = async (req, res) => {
 
     const result = await createParcelRequest(parcelData, req.files);
 
+    // Trigger matching asynchronously (don't wait for it)
+    setImmediate(async () => {
+      try {
+        const matchResult = await matchParcelWithTravellers(result.parcel.id);
+        console.log(`[Parcel] Matching triggered for parcel ${result.parcel.id}: ${matchResult.requestsSent} requests sent`);
+
+        // Send notifications to travellers
+        if (matchResult.requests && matchResult.requests.length > 0) {
+          for (const request of matchResult.requests) {
+            await sendToTraveller(
+              request.traveller_id,
+              "New Parcel Available",
+              `A new parcel is available for delivery from ${result.pickupAddress.city} to ${result.deliveryAddress.city}`,
+              {
+                parcel_id: result.parcel.id,
+                type: "new_parcel_request",
+              }
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`[Parcel] Error triggering matching for parcel ${result.parcel.id}:`, error.message);
+      }
+    });
+
     // Return the parcel ID and booking ID to frontend
-    return responseSuccess(res, "Parcel request created successfully", {
+    return responseSuccess(res, {
       id: result.parcel.id,
       // bookingId: result.booking.id,
       parcel: result.parcel,
       booking: result.booking,
       pickupAddress: result.pickupAddress,
       deliveryAddress: result.deliveryAddress
-    });
+    }, "Parcel request created successfully");
   } catch (error) {
-    console.error("Parcel creation error:", error);
+    console.error("Parcel creation error:", error.message);
+    console.error("Stack trace:", error.stack);
+    console.error("Full error:", error);
     return responseError(res, error.message || "Parcel request failed");
   }
 };
@@ -31,9 +60,12 @@ export const getUserRequests = async (req, res) => {
     console.log("🔥 Fetching orders for userId:", userId); // ← ADD THIS
     
     const result = await getUserParcelRequests(userId);
-    console.log("🔥 Found parcels:", result.length);       // ← ADD THIS
-    
-    return responseSuccess(res, "Parcel requests fetched successfully", result);
+
+    return responseSuccess(
+      res,
+      result,
+      "Parcel requests fetched successfully"
+    );
   } catch (error) {
     console.error("Get parcel error:", error);
     return responseError(res, error.message || "Failed to fetch parcels");
@@ -55,8 +87,8 @@ export const getParcelById = async (req, res) => {
 
     return responseSuccess(
       res,
-      "Parcel fetched successfully",
-      result
+      result,
+      "Parcel fetched successfully"
     );
   } catch (error) {
     console.error("Get parcel error:", error);

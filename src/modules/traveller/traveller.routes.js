@@ -46,13 +46,20 @@ router.patch("/kyc/status/:id", authMiddleware, validateStatus, ctrl.updateKYCSt
 // ── Dashboard ────────────────────────────────  ✅ added
 router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
 router.get("/dashboard/stats",      authMiddleware, ctrl.getTravelerStats);
+router.get("/dashboard/requests",   authMiddleware, ctrl.getTravelerParcelRequests);
+
+// ── Delivery Status & OTP Management ────────  ✅ NEW
+router.patch("/booking/:bookingId/status", authMiddleware, ctrl.updateBookingStatus);
+router.post("/booking/:bookingId/otp/generate", authMiddleware, ctrl.generateOTP);
+router.post("/booking/:bookingId/otp/verify", authMiddleware, ctrl.verifyOTP);
 
 // ── Routes ───────────────────────────────────
-router.post("/routes",     authMiddleware, validateRoute, ctrl.createRoute);
-router.get("/routes",      authMiddleware, ctrl.getMyRoutes);
-router.get("/routes/:id",  authMiddleware, ctrl.getRouteById);
-router.put("/routes/:id",  authMiddleware, validateRoute, ctrl.updateRoute);
-router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
+// Routes are now handled by travellerRoute.routes.js with proper Joi validation
+// router.post("/routes",     authMiddleware, validateRoute, ctrl.createRoute);
+// router.get("/routes",      authMiddleware, ctrl.getMyRoutes);
+// router.get("/routes/:id",  authMiddleware, ctrl.getRouteById);
+// router.put("/routes/:id",  authMiddleware, validateRoute, ctrl.updateRoute);
+// router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
 
 // ── Trips ─────────────────────────────────────
 // router.post("/trip",     authMiddleware, trip.createTravellerTrip);  
