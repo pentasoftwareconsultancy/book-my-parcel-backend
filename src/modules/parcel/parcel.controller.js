@@ -28,14 +28,12 @@ export const createParcel = async (req, res) => {
 export const getUserRequests = async (req, res) => {
   try {
     const userId = req.user.id;
-
+    console.log("🔥 Fetching orders for userId:", userId); // ← ADD THIS
+    
     const result = await getUserParcelRequests(userId);
-
-    return responseSuccess(
-      res,
-      "Parcel requests fetched successfully",
-      result
-    );
+    console.log("🔥 Found parcels:", result.length);       // ← ADD THIS
+    
+    return responseSuccess(res, "Parcel requests fetched successfully", result);
   } catch (error) {
     console.error("Get parcel error:", error);
     return responseError(res, error.message || "Failed to fetch parcels");
@@ -46,12 +44,14 @@ export const getUserRequests = async (req, res) => {
 export const getParcelById = async (req, res) => {
   try {
     const { id } = req.params;
-
+    console.log("Fetching parcel with ID:", id);
     const result = await getServiceParcelById(id);
+    console.log("Parcel fetched:", result);
 
     if (!result) {
       return responseError(res, "Parcel not found", 404);
     }
+    console.log("Parcel details:", result);
 
     return responseSuccess(
       res,

@@ -230,9 +230,6 @@ Address.hasMany(Parcel, { as: "deliveryParcels", foreignKey: "delivery_address_i
 
 
 
-
-
-
 export {
   User,
   Role,
