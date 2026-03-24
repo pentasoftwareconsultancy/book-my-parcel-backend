@@ -346,13 +346,83 @@ export async function getUserParcelRequests(userId) {
 }
 
 export async function getParcelById(parcelId) {
-  const parcel = await Parcel.findOne({
-    where: { id: parcelId },
-    include: [
-      { model: Address, as: "pickupAddress" },
-      { model: Address, as: "deliveryAddress" },
-      { model: Booking, as: "booking" },
-    ],
-  });
-  return parcel;
+  try {
+    const parcel = await Parcel.findOne({
+      where: { id: parcelId },
+      include: [
+        { model: Address, as: "pickupAddress" },
+        { model: Address, as: "deliveryAddress" },
+        { 
+          model: Booking, 
+          as: "booking",
+          required: false, // Make booking optional
+          include: [
+            {
+              model: User,
+              as: "traveller",
+              required: false, // Make traveller optional
+              attributes: ["id", "email", "phone_number"],
+              include: [
+                {
+                  model: UserProfile,
+                  as: "profile",
+                  required: false,
+                  attributes: ["name"]
+                },
+                {
+                  model: TravellerProfile,
+                  as: "travellerProfile",
+                  required: false, // Make profile optional
+                  attributes: ["rating", "total_deliveries", "vehicle_type", "vehicle_number"]
+                }
+              ]
+            }
+          ]
+        },
+      ],
+    });
+    return parcel;
+  } catch (error) {
+    console.error(`[getParcelById] Error fetching parcel ${parcelId}:`, error.message);
+    console.error(`[getParcelById] Stack:`, error.stack);
+    throw error;
+  }
+}
+
+
+// ─── Update Parcel Form Step ──────────────────────────────────────────────────
+export async function updateParcelStep(parcelId, stepData) {
+  try {
+    const parcel = await Parcel.findByPk(parcelId);
+    
+    if (!parcel) {
+      throw new Error('Parcel not found');
+    }
+
+    const updateData = {};
+    
+    // Update form step if provided
+    if (stepData.form_step !== undefined) {
+      updateData.form_step = stepData.form_step;
+    }
+    
+    // Update selected acceptance if provided
+    if (stepData.selected_acceptance_id !== undefined) {
+      updateData.selected_acceptance_id = stepData.selected_acceptance_id;
+    }
+    
+    // Update selected partner if provided (for backward compatibility)
+    if (stepData.selected_partner_id !== undefined) {
+      updateData.selected_partner_id = stepData.selected_partner_id;
+    }
+
+    await parcel.update(updateData);
+    
+    console.log(`[updateParcelStep] Updated parcel ${parcelId} to step ${stepData.form_step}`);
+    
+    return parcel;
+  } catch (error) {
+    console.error(`[updateParcelStep] Error updating parcel ${parcelId}:`, error.message);
+    throw error;
+  }
 }

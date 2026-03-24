@@ -39,6 +39,11 @@ const RoutePlace = sequelize.define(
       type: DataTypes.DECIMAL(11, 8),
       allowNull: true,
     },
+    sequence_order: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "Order of this place in the route (0 = origin, higher = later in route)",
+    },
   },
   {
     timestamps: true,

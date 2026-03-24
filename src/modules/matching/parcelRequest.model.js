@@ -46,7 +46,7 @@ const ParcelRequest = sequelize.define(
       allowNull: true,
     },
     status: {
-      type: DataTypes.ENUM("SENT", "ACCEPTED", "REJECTED", "EXPIRED", "SELECTED", "NOT_SELECTED"),
+      type: DataTypes.ENUM("SENT", "INTERESTED", "ACCEPTED", "REJECTED", "EXPIRED", "SELECTED", "NOT_SELECTED"),
       defaultValue: "SENT",
     },
     sent_at: {

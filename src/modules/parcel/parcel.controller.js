@@ -95,3 +95,37 @@ export const getParcelById = async (req, res) => {
     return responseError(res, error.message || "Failed to fetch parcel");
   }
 };
+
+
+// Update parcel form step
+export const updateParcelStep = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const stepData = req.body;
+
+    // First verify the parcel belongs to the user
+    const parcel = await getServiceParcelById(id);
+    
+    if (!parcel) {
+      return responseError(res, "Parcel not found", 404);
+    }
+
+    if (parcel.user_id !== userId) {
+      return responseError(res, "Unauthorized", 403);
+    }
+
+    // Import the service function
+    const { updateParcelStep: updateStep } = await import("./parcel.service.js");
+    const updatedParcel = await updateStep(id, stepData);
+
+    return responseSuccess(
+      res,
+      updatedParcel,
+      "Parcel step updated successfully"
+    );
+  } catch (error) {
+    console.error("Update parcel step error:", error);
+    return responseError(res, error.message || "Failed to update parcel step");
+  }
+};

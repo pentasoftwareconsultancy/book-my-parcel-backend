@@ -1,5 +1,6 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { validateRequest } from "../../middlewares/validation.middleware.js";
 import ParcelRequest from "./parcelRequest.model.js";
 import Parcel from "../parcel/parcel.model.js";
@@ -9,6 +10,7 @@ import { responseSuccess, responseError } from "../../utils/response.util.js";
 import {
   findTravellers,
   acceptRequest,
+  expressInterest,
   rejectRequest,
   getAcceptances,
   selectTraveller,
@@ -20,6 +22,9 @@ import {
 import { selectTravellerSchema } from "./matching.validation.js";
 
 const router = express.Router();
+
+// Apply rate limiting to all matching routes
+router.use(generalLimiter);
 
 // ─── Parcel Owner Routes ────────────────────────────────────────────────────
 
@@ -36,6 +41,9 @@ router.get("/:id/route-geometry", authMiddleware, getRouteGeometry);
 router.post("/:id/select-traveller", authMiddleware, validateRequest(selectTravellerSchema), selectTraveller);
 
 // ─── Traveller Routes ───────────────────────────────────────────────────────
+
+// POST /api/traveller/requests/:requestId/express-interest - Express interest in a request
+router.post("/requests/:requestId/express-interest", authMiddleware, expressInterest);
 
 // POST /api/traveller/requests/:requestId/accept - Accept a request
 router.post("/requests/:requestId/accept", authMiddleware, acceptRequest);

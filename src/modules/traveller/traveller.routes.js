@@ -5,11 +5,14 @@ import express from "express";
 import multer from "multer";
 import fs from "fs";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
 import * as ctrl from "./traveller.controller.js";
 import { validateKYC, validateStatus, validateRoute } from "../../utils/validation.util.js";
-// import * as trip from "./travellerTrip.controller.js";
 
 const router = express.Router();
+
+// Apply rate limiting to all traveller routes
+router.use(generalLimiter);
 
 // ── Multer Setup ─────────────────────────────
 const uploadDir = "uploads/kyc";
@@ -38,10 +41,6 @@ router.post("/kyc",          authMiddleware, kycUpload, validateKYC, ctrl.submit
 router.get("/kyc",           authMiddleware, ctrl.getMyKYC);
 router.get("/kyc/all",       authMiddleware, ctrl.getAllKYCs);          // admin
 router.patch("/kyc/status/:id", authMiddleware, validateStatus, ctrl.updateKYCStatus); // admin
-// router.put("/kyc/update",    authMiddleware, kycUpload, validateKYC, ctrl.updateTravellerKYC);
-
-// ── Nearby Travelers ─────────────────────────
-// router.get("/nearby", ctrl.getNearbyTravelers);
 
 // ── Dashboard ────────────────────────────────  ✅ added
 router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
@@ -52,18 +51,5 @@ router.get("/dashboard/requests",   authMiddleware, ctrl.getTravelerParcelReques
 router.patch("/booking/:bookingId/status", authMiddleware, ctrl.updateBookingStatus);
 router.post("/booking/:bookingId/otp/generate", authMiddleware, ctrl.generateOTP);
 router.post("/booking/:bookingId/otp/verify", authMiddleware, ctrl.verifyOTP);
-
-// ── Routes ───────────────────────────────────
-// Routes are now handled by travellerRoute.routes.js with proper Joi validation
-// router.post("/routes",     authMiddleware, validateRoute, ctrl.createRoute);
-// router.get("/routes",      authMiddleware, ctrl.getMyRoutes);
-// router.get("/routes/:id",  authMiddleware, ctrl.getRouteById);
-// router.put("/routes/:id",  authMiddleware, validateRoute, ctrl.updateRoute);
-// router.delete("/routes/:id", authMiddleware, ctrl.deleteRoute);
-
-// ── Trips ─────────────────────────────────────
-// router.post("/trip",     authMiddleware, trip.createTravellerTrip);  
-// router.get("/trip",      authMiddleware, trip.getAllTravellerTrips); 
-// router.get("/trip/:id",  authMiddleware, trip.getTravellerTripById); 
 
 export default router;

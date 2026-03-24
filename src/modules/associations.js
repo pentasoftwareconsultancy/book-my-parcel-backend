@@ -107,7 +107,8 @@ Parcel.belongsTo(User, { foreignKey: "user_id" });
    =========================== */
 Parcel.hasOne(Booking, {
   foreignKey: "parcel_id",
-  onDelete: "CASCADE"
+  onDelete: "CASCADE",
+  as: "booking"
 });
 Booking.belongsTo(Parcel, {
   foreignKey: "parcel_id",
@@ -294,6 +295,10 @@ Parcel.hasMany(ParcelRequest, { foreignKey: "parcel_id", as: "requests" });
 // ParcelRequest ↔ TravellerRoute (N-1)
 ParcelRequest.belongsTo(TravellerRoute, { foreignKey: "route_id", as: "route" });
 TravellerRoute.hasMany(ParcelRequest, { foreignKey: "route_id", as: "parcelRequests" });
+
+// ParcelRequest ↔ User (N-1) - for traveller
+ParcelRequest.belongsTo(User, { foreignKey: "traveller_id", as: "traveller" });
+User.hasMany(ParcelRequest, { foreignKey: "traveller_id", as: "parcelRequests" });
 
 // ParcelAcceptance ↔ ParcelRequest (1-1)
 ParcelAcceptance.belongsTo(ParcelRequest, { foreignKey: "parcel_request_id", as: "request" });

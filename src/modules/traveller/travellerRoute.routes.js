@@ -1,5 +1,6 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { validateRequest } from "../../middlewares/validation.middleware.js";
 import { createRouteSchema } from "./travellerRoute.validation.js";
 import {
@@ -10,7 +11,8 @@ import {
 
 const router = express.Router();
 
-// All routes require authentication
+// Apply rate limiting and authentication to all routes
+router.use(generalLimiter);
 router.use(authMiddleware);
 
 // POST /api/traveller/routes - Create a new route

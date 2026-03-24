@@ -1,20 +1,3 @@
-// import express from "express";
-// import {
-//   signupController,
-//   loginController,
-  
-// } from "./auth.controller.js";
-
-// const router = express.Router();
-
-// // Public routes
-// router.post("/signup", signupController);
-// router.post("/login", loginController);
-
-// export default router;
-
-
-
 import express from "express";
 import {
   signupController,
@@ -27,28 +10,22 @@ import {
 } from "./auth.controller.js";
 
 import { uploadProfile } from "../../utils/fileUpload.util.js";
-
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { loginLimiter, sensitiveLimiter } from "../../middlewares/rateLimit.middleware.js";
 
 const router = express.Router();
 
-// Public routes
-router.post("/signup", signupController);
-router.post("/login", loginController);
+// Public routes with rate limiting
+router.post("/signup", loginLimiter, signupController);
+router.post("/login", loginLimiter, loginController);
 
-
-
-/*GET USER PROFILE*/
+// Protected routes
 router.get("/profile", authMiddleware, getProfileController);
-
-// profile update 
 router.put("/update-profile", authMiddleware, updateUserProfile);
 
-// profile photo upload/update
-router.post("/profile/photo", authMiddleware, uploadProfile.single("photo"), uploadProfilePhotoController);
-router.put("/profile/photo", authMiddleware, uploadProfile.single("photo"), uploadProfilePhotoController);
-
-//Update password
-router.put("/update-password", authMiddleware, updatePasswordController);
+// Sensitive routes with stricter rate limiting
+router.post("/profile/photo", authMiddleware, sensitiveLimiter, uploadProfile.single("photo"), uploadProfilePhotoController);
+router.put("/profile/photo", authMiddleware, sensitiveLimiter, uploadProfile.single("photo"), uploadProfilePhotoController);
+router.put("/update-password", authMiddleware, sensitiveLimiter, updatePasswordController);
 
 export default router;
