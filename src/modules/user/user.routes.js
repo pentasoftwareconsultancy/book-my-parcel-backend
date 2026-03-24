@@ -3,6 +3,7 @@ import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import * as ctrl from "./user.controller.js";
 import { getUserRequests } from "../parcel/parcel.controller.js";
+import paymentRoutes from "../payment/payment.routes.js";
 
 const router = express.Router();
 
@@ -17,6 +18,8 @@ router.get(
   authMiddleware,
   getUserRequests
 );
+
+router.use("/payment", authMiddleware, paymentRoutes);
 
 
 export default router;

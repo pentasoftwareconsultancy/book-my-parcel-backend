@@ -2,6 +2,7 @@ import express from "express";
 import { createParcel, getParcelById,getUserRequests } from "./parcel.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { upload } from "../../utils/fileUpload.util.js";
+import parseJsonFields from "../../middlewares/parseJsonFields.middleware.js";
 
 const router = express.Router();
 
@@ -10,6 +11,10 @@ router.post(
   "/request",
   authMiddleware,
   upload.array("parcel_photos", 3), // max 3 photos
+  parseJsonFields([
+    "pickup_address",
+    "delivery_address"
+  ]),
   createParcel
 );
 
