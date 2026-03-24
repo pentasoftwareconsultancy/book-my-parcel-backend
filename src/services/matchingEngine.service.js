@@ -495,7 +495,7 @@ export async function expireOldRequests() {
       where: {
         status: "SENT",
         expires_at: {
-          [sequelize.Op.lt]: now,
+          [Op.lt]: now,
         },
       },
     }
