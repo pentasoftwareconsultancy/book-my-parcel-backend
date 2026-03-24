@@ -1,6 +1,7 @@
 import express from "express";
-import { createParcel, getParcelById, getUserRequests } from "./parcel.controller.js";
+import { createParcel, getParcelById, getUserRequests, updateParcelStep } from "./parcel.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { upload } from "../../utils/fileUpload.util.js";
 import {
   validateRequest,
@@ -10,6 +11,9 @@ import {
 
 const router = express.Router();
 
+// Apply rate limiting to all parcel routes
+router.use(generalLimiter);
+
 // Route: Create Parcel Request (Sender)
 router.post(
   "/request",
@@ -18,6 +22,13 @@ router.post(
   parseJsonFields("pickup_address", "delivery_address"), // parse JSON strings from multipart
   validateRequest(parcelRequestSchema),
   createParcel
+);
+
+// Route: Update parcel form step
+router.patch(
+  "/:id/step",
+  authMiddleware,
+  updateParcelStep
 );
 
 // Get all parcels of logged-in user

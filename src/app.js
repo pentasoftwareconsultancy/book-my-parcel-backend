@@ -1,6 +1,7 @@
 import express from "express";
 import routes from "./routes.js";
 import cors from "cors";
+import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
 
@@ -35,5 +36,8 @@ app.use("/uploads", express.static("uploads"));
 app.get("/", (req, res) => {
   res.status(200).json({ message: "Book My Parcel Backend is running!" });
 });
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 export default app;

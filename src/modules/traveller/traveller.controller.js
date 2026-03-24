@@ -33,23 +33,6 @@ export const getMyKYC = async (req, res, next) => {
 
 
 /* ─────────────────────────────
-   UPDATE KYC (Traveller)
-───────────────────────────── */
-// export const updateTravellerKYC = async (req, res, next) => {
-//   try {
-//     const data = await travellerService.updateTravellerKYC(
-//       req.user.id, // ✅
-//       req.body,
-//       req.files
-//     );
-//     return responseSuccess(res, data, "KYC Updated Successfully");
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-
-/* ─────────────────────────────
    GET ALL KYC - ADMIN
 ───────────────────────────── */
 export const getAllKYCs = async (req, res, next) => {
@@ -259,29 +242,3 @@ export const deleteRoute = async (req, res, next) => {
     next(err);
   }
 };
-
-/* ─────────────────────────────
-   GET NEARBY TRAVELERS
-───────────────────────────── */
-// export const getNearbyTravelers = async (req, res, next) => {
-//   try {
-//     const {
-//       pickupCity,
-//       deliveryCity,
-//       page = 1,
-//       limit = 10,
-//       vehicleType = null,
-//     } = req.query; // ✅ get from req.query not options
-
-//     const data = await travellerService.getNearbyTravelers(
-//       pickupCity,
-//       deliveryCity,
-//       { page, limit, vehicleType }
-//     );
-
-//     return successResponse(res, data, "Nearby travelers fetched");
-
-//   } catch (err) {
-//     next(err);
-//   }
-// };

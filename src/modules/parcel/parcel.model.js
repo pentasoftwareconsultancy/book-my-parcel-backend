@@ -32,6 +32,19 @@ const Parcel = sequelize.define(
     selected_partner_id: { type: DataTypes.UUID },
     price_quote: { type: DataTypes.FLOAT },
 
+    // --- Form progress tracking ---
+    form_step: { 
+      type: DataTypes.INTEGER, 
+      allowNull: false, 
+      defaultValue: 1,
+      comment: 'Current step in form: 1=details, 2=select traveller, 3=payment'
+    },
+    selected_acceptance_id: { 
+      type: DataTypes.UUID, 
+      allowNull: true,
+      comment: 'Acceptance selected by user in step 2 (before booking creation)'
+    },
+
     // --- Route data (populated after geocoding both addresses) ---
     route_distance_km:       { type: DataTypes.FLOAT, allowNull: true },
     route_duration_minutes:  { type: DataTypes.FLOAT, allowNull: true },

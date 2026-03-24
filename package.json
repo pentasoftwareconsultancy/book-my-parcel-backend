@@ -18,6 +18,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
     "express-validator": "^7.3.1",
     "fs": "^0.0.1-security",
     "joi": "^18.0.2",

@@ -174,7 +174,115 @@ export async function acceptRequest(req, res) {
   }
 }
 
-// Reject parcel request
+// Express interest in parcel request (new flow)
+export async function expressInterest(req, res) {
+  const t = await sequelize.transaction();
+
+  try {
+    const { requestId } = req.params;
+    const travellerId = req.user.id;
+
+    console.log(`[DEBUG] Express Interest - RequestId: ${requestId}, TravellerId: ${travellerId}`);
+
+    // Find request
+    const request = await ParcelRequest.findByPk(requestId, { transaction: t });
+    if (!request) {
+      console.log(`[DEBUG] Request not found: ${requestId}`);
+      await t.rollback();
+      return responseError(res, "Request not found", 404);
+    }
+
+    console.log(`[DEBUG] Found request - Status: ${request.status}, Traveller: ${request.traveller_id}, Expires: ${request.expires_at}`);
+
+    // Verify request is still valid
+    if (request.status !== "SENT") {
+      console.log(`[DEBUG] Request status invalid: ${request.status}`);
+      await t.rollback();
+      return responseError(res, `Request already ${request.status.toLowerCase()}`, 400);
+    }
+
+    if (new Date() > request.expires_at) {
+      console.log(`[DEBUG] Request expired: ${request.expires_at} vs ${new Date()}`);
+      await t.rollback();
+      return responseError(res, "Request has expired", 400);
+    }
+
+    // Verify traveller matches
+    if (request.traveller_id !== travellerId) {
+      console.log(`[DEBUG] Traveller mismatch: ${request.traveller_id} vs ${travellerId}`);
+      await t.rollback();
+      return responseError(res, "Unauthorized", 403);
+    }
+
+    // Get parcel details
+    const parcel = await Parcel.findByPk(request.parcel_id, { transaction: t });
+    if (!parcel) {
+      await t.rollback();
+      return responseError(res, "Parcel not found", 404);
+    }
+
+    // Create acceptance record (same as before, but status is INTERESTED)
+    const acceptance = await ParcelAcceptance.create(
+      {
+        parcel_request_id: requestId,
+        parcel_id: request.parcel_id,
+        traveller_id: travellerId,
+        acceptance_price: parcel.price_quote,
+      },
+      { transaction: t }
+    );
+
+    // Update request status to INTERESTED (not ACCEPTED)
+    await request.update(
+      {
+        status: "INTERESTED",
+        responded_at: new Date(),
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    // Emit WebSocket event (if socket.io is available)
+    if (req.app.get("io")) {
+      const io = req.app.get("io");
+      
+      // Notify parcel owner about new interest
+      io.to(`parcel_${request.parcel_id}`).emit("new_interest", {
+        acceptance_id: acceptance.id,
+        traveller_id: travellerId,
+        detour_km: request.detour_km,
+        detour_percentage: request.detour_percentage,
+        acceptance_price: acceptance.acceptance_price,
+      });
+      
+      console.log(`[Socket] Emitted new_interest for request ${requestId}`);
+    }
+
+    // Notify parcel owner
+    await sendToUser(
+      parcel.user_id,
+      "Traveller Interested in Your Parcel",
+      "A traveller has expressed interest in delivering your parcel!",
+      {
+        parcel_id: request.parcel_id,
+        type: "interest_received",
+      }
+    );
+
+    return responseSuccess(res, {
+      acceptance_id: acceptance.id,
+      parcel_id: request.parcel_id,
+      traveller_id: travellerId,
+      acceptance_price: acceptance.acceptance_price,
+      message: "Your wave has been sent to the user! We will inform you if the user selects or rejects you."
+    }, "Interest expressed successfully");
+  } catch (error) {
+    await t.rollback();
+    console.error("[Matching] Error expressing interest:", error.message);
+    return responseError(res, error.message || "Failed to express interest", 500);
+  }
+}
 export async function rejectRequest(req, res) {
   const t = await sequelize.transaction();
 
@@ -227,7 +335,8 @@ export async function rejectRequest(req, res) {
 export async function getAcceptances(req, res) {
   try {
     const { id: parcelId } = req.params;
-    const { sort = "detour" } = req.query;
+    const { sort = "detour", include_pending = "false" } = req.query;
+    const includePending = include_pending === "true";
 
     // Verify parcel exists and belongs to user
     const parcel = await Parcel.findByPk(parcelId, {
@@ -271,7 +380,8 @@ export async function getAcceptances(req, res) {
         {
           model: ParcelRequest,
           as: "request",
-          attributes: ["detour_km", "detour_percentage", "match_score"],
+          attributes: ["detour_km", "detour_percentage", "match_score", "status"],
+          where: { status: "INTERESTED" }, // Only show interested travellers
         },
         {
           model: User,
@@ -291,6 +401,7 @@ export async function getAcceptances(req, res) {
 
     let formattedAcceptances = acceptances.map((acc) => ({
       acceptance_id: acc.id,
+      type: "accepted",
       traveller: {
         id: acc.traveller.id,
         email: acc.traveller.email,
@@ -309,6 +420,53 @@ export async function getAcceptances(req, res) {
       accepted_at: acc.accepted_at,
     }));
 
+    // Get pending requests if requested
+    let pendingRequests = [];
+    if (includePending) {
+      const pendingParcelRequests = await ParcelRequest.findAll({
+        where: { 
+          parcel_id: parcelId,
+          status: "SENT"
+        },
+        include: [
+          {
+            model: User,
+            as: "traveller",
+            attributes: ["id", "email", "phone_number"],
+            include: [
+              {
+                model: TravellerProfile,
+                as: "travellerProfile",
+                attributes: ["id", "vehicle_type", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"],
+              },
+            ],
+          },
+        ],
+        order: [["sent_at", "DESC"]],
+      });
+
+      pendingRequests = pendingParcelRequests.map((req) => ({
+        request_id: req.id,
+        type: "pending",
+        traveller: {
+          id: req.traveller.id,
+          email: req.traveller.email,
+          phone: req.traveller.phone_number,
+          rating: req.traveller.travellerProfile?.rating || 4.8,
+          total_deliveries: req.traveller.travellerProfile?.total_deliveries || 0,
+          profile_photo: req.traveller.travellerProfile?.profile_photo || null,
+          vehicle_type: req.traveller.travellerProfile?.vehicle_type || null,
+          capacity_kg: req.traveller.travellerProfile?.capacity_kg || null,
+          travellerProfile: req.traveller.travellerProfile
+        },
+        detour_km: req.detour_km,
+        detour_percentage: req.detour_percentage,
+        match_score: req.match_score,
+        sent_at: req.sent_at,
+        expires_at: req.expires_at,
+      }));
+    }
+
     // Handle nearby sorting for short-distance parcels
     if (sort === "nearby" && parcel.route_distance_km <= 50) {
       const pickupLocation = {
@@ -321,6 +479,7 @@ export async function getAcceptances(req, res) {
 
     const responseData = {
       acceptances: formattedAcceptances,
+      pending_requests: pendingRequests,
       sort_by: sort,
       parcel_distance_km: parcel.route_distance_km,
       pickup_location: parcel.pickupAddress ? {
@@ -349,7 +508,13 @@ export async function selectTraveller(req, res) {
     const { traveller_id, acceptance_price } = req.body;
 
     // Verify parcel exists and belongs to user
-    const parcel = await Parcel.findByPk(parcelId, { transaction: t });
+    const parcel = await Parcel.findByPk(parcelId, { 
+      include: [
+        { model: Address, as: "pickupAddress", attributes: ["city"] },
+        { model: Address, as: "deliveryAddress", attributes: ["city"] }
+      ],
+      transaction: t 
+    });
     if (!parcel) {
       await t.rollback();
       return responseError(res, "Parcel not found", 404);
@@ -366,21 +531,25 @@ export async function selectTraveller(req, res) {
       return responseError(res, `Parcel is already ${parcel.status.toLowerCase()}`, 400);
     }
 
-    // Verify acceptance exists
+    // Verify acceptance exists and is in INTERESTED status
     const acceptance = await ParcelAcceptance.findOne(
       {
         where: {
           parcel_id: parcelId,
           traveller_id,
         },
-        include: [{ model: ParcelRequest, as: "request" }],
+        include: [{ 
+          model: ParcelRequest, 
+          as: "request",
+          where: { status: "INTERESTED" } // Only allow selection of interested travellers
+        }],
       },
       { transaction: t }
     );
 
     if (!acceptance) {
       await t.rollback();
-      return responseError(res, "Traveller has not accepted this parcel", 400);
+      return responseError(res, "Traveller has not expressed interest in this parcel", 400);
     }
 
     // Get traveller profile
@@ -432,7 +601,13 @@ export async function selectTraveller(req, res) {
       );
     }
 
-    // Reject other acceptances
+    // Update selected traveller's request status to SELECTED
+    await acceptance.request.update(
+      { status: "SELECTED" },
+      { transaction: t }
+    );
+
+    // Reject other acceptances and update their status to NOT_SELECTED
     const otherAcceptances = await ParcelAcceptance.findAll(
       {
         where: {
@@ -446,44 +621,62 @@ export async function selectTraveller(req, res) {
 
     for (const otherAcc of otherAcceptances) {
       await otherAcc.request.update(
-        { status: "REJECTED" },
+        { status: "NOT_SELECTED" },
         { transaction: t }
       );
 
       // Notify rejected travellers
       await sendToTraveller(
         otherAcc.traveller_id,
-        "Parcel Assigned",
-        "The parcel has been assigned to another traveller.",
+        "Parcel Assigned to Another Traveller",
+        "Thank you for your interest. The parcel has been assigned to another traveller.",
         {
           parcel_id: parcelId,
-          type: "parcel_assigned_to_other",
+          type: "parcel_not_selected",
         }
       );
     }
 
     await t.commit();
 
-    // Emit WebSocket event
+    // Emit WebSocket events
     if (req.app.get("io")) {
-      req.app.get("io").to(`parcel_${parcelId}`).emit("parcel_selected", {
+      const io = req.app.get("io");
+      
+      // Emit to parcel room
+      io.to(`parcel_${parcelId}`).emit("parcel_selected", {
         parcel_id: parcelId,
         traveller_id,
         booking_id: booking.id,
         booking_ref: booking.booking_ref,
         final_price: finalPrice,
       });
+
+      // Emit specific notification to selected traveller
+      io.to(`traveller_requests_${traveller_id}`).emit("traveller_selected", {
+        parcel_id: parcelId,
+        booking_id: booking.id,
+        booking_ref: booking.booking_ref,
+        final_price: finalPrice,
+        message: "Congratulations! You've been selected for this parcel delivery!",
+        parcel_details: {
+          pickup_city: parcel.pickupAddress?.city,
+          delivery_city: parcel.deliveryAddress?.city,
+          weight: parcel.weight,
+          price: finalPrice
+        }
+      });
     }
 
     // Notify selected traveller
     await sendToTraveller(
       traveller_id,
-      "Parcel Confirmed",
-      "Your parcel delivery has been confirmed!",
+      "Congratulations! You've Been Selected",
+      "You have been selected to deliver this parcel. Booking is now confirmed!",
       {
         parcel_id: parcelId,
         booking_id: booking.id,
-        type: "parcel_confirmed",
+        type: "parcel_selected_for_delivery",
       }
     );
 
@@ -532,37 +725,47 @@ export async function getTravellerRequests(req, res) {
       order: [["sent_at", "DESC"]],
     });
 
-    const formattedRequests = requests.map((req) => ({
-      request_id: req.id,
-      parcel: {
-        id: req.parcel.id,
-        parcel_ref: req.parcel.parcel_ref,
-        weight: req.parcel.weight,
-        type: req.parcel.parcel_type,
-        price_quote: req.parcel.price_quote,
-        pickup: {
-          city: req.parcel.pickupAddress.city,
-          locality: req.parcel.pickupAddress.locality,
-          address: req.parcel.pickupAddress.formatted_address,
+    const formattedRequests = requests.map((req) => {
+      // Debug logging
+      console.log(`[getTravellerRequests] Request ${req.id}:`, {
+        parcel_id: req.parcel.id,
+        pickup_city: req.parcel.pickupAddress?.city,
+        delivery_city: req.parcel.deliveryAddress?.city,
+        route_id: req.route?.id
+      });
+
+      return {
+        request_id: req.id,
+        parcel: {
+          id: req.parcel.id,
+          parcel_ref: req.parcel.parcel_ref,
+          weight: req.parcel.weight,
+          type: req.parcel.parcel_type,
+          price_quote: req.parcel.price_quote,
+          pickup: {
+            city: req.parcel.pickupAddress.city,
+            locality: req.parcel.pickupAddress.locality,
+            address: req.parcel.pickupAddress.formatted_address,
+          },
+          delivery: {
+            city: req.parcel.deliveryAddress.city,
+            locality: req.parcel.deliveryAddress.locality,
+            address: req.parcel.deliveryAddress.formatted_address,
+          },
         },
-        delivery: {
-          city: req.parcel.deliveryAddress.city,
-          locality: req.parcel.deliveryAddress.locality,
-          address: req.parcel.deliveryAddress.formatted_address,
+        route: {
+          id: req.route.id,
+          distance_km: req.route.total_distance_km,
+          duration_minutes: req.route.total_duration_minutes,
         },
-      },
-      route: {
-        id: req.route.id,
-        distance_km: req.route.total_distance_km,
-        duration_minutes: req.route.total_duration_minutes,
-      },
-      detour_km: req.detour_km,
-      detour_percentage: req.detour_percentage,
-      match_score: req.match_score,
-      status: req.status,
-      sent_at: req.sent_at,
-      expires_at: req.expires_at,
-    }));
+        detour_km: req.detour_km,
+        detour_percentage: req.detour_percentage,
+        match_score: req.match_score,
+        status: req.status,
+        sent_at: req.sent_at,
+        expires_at: req.expires_at,
+      };
+    });
 
     return responseSuccess(res, formattedRequests, "Requests retrieved successfully");
   } catch (error) {
