@@ -137,6 +137,10 @@ export const parcelRequestSchema = Joi.object({
   price_quote:    Joi.number().min(0).optional().allow(null),
   pickup_address:   addressSchema.required(),
   delivery_address: addressSchema.required(),
+  // Optional fields for form flow
+  form_step:            Joi.number().integer().min(1).max(3).optional().allow(null),
+  selected_partner_id:  Joi.number().integer().optional().allow(null),
+  selected_acceptance_id: Joi.number().integer().optional().allow(null),
 }).options({ allowUnknown: false });
 
 // ─── Middleware: Parse JSON strings from multipart form-data ──────────────────
