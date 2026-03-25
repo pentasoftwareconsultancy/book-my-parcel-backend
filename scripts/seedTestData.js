@@ -80,7 +80,7 @@ async function createTestUser() {
   const user = await User.create({
     email: TEST_USER_EMAIL,
     password: hashedPassword,
-    phone_number: "9876543210",
+    phone_number: "9767996768",
     is_active: true,
     is_verified: true
   });
@@ -125,9 +125,15 @@ async function createTestUser() {
 async function createAddresses() {
   console.log("📍 Creating addresses...");
   
+  // Get test phone number from environment or use default
+  const testPhone = process.env.TEST_PHONE_NUMBER || "9876543210";
+  console.log(`📱 Using test phone number: ${testPhone}`);
+  
   const addresses = await Address.bulkCreate([
     {
       type: "pickup",
+      name: "Vivek Jangam",
+      phone: testPhone,
       address: "FC Road, Pune",
       city: "Pune",
       state: "Maharashtra",
@@ -138,6 +144,8 @@ async function createAddresses() {
     },
     {
       type: "delivery",
+      name: "Recipient Name",
+      phone: testPhone,
       address: "Koregaon Park, Pune", 
       city: "Pune",
       state: "Maharashtra",
@@ -148,6 +156,8 @@ async function createAddresses() {
     },
     {
       type: "pickup",
+      name: "Vivek Jangam",
+      phone: testPhone,
       address: "Bandra West, Mumbai",
       city: "Mumbai", 
       state: "Maharashtra",
@@ -158,6 +168,8 @@ async function createAddresses() {
     },
     {
       type: "delivery",
+      name: "Recipient Name",
+      phone: testPhone,
       address: "Andheri East, Mumbai",
       city: "Mumbai",
       state: "Maharashtra", 
@@ -168,6 +180,8 @@ async function createAddresses() {
     },
     {
       type: "pickup",
+      name: "Vivek Jangam",
+      phone: testPhone,
       address: "MG Road, Bangalore",
       city: "Bangalore",
       state: "Karnataka",
@@ -178,6 +192,8 @@ async function createAddresses() {
     },
     {
       type: "delivery",
+      name: "Recipient Name",
+      phone: testPhone,
       address: "Whitefield, Bangalore",
       city: "Bangalore",
       state: "Karnataka",

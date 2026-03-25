@@ -61,8 +61,9 @@ class BookingService {
       throw new Error("Unauthorized: You don't own this booking");
     }
 
-    if (booking.status !== "CONFIRMED") {
-      throw new Error(`Invalid status: Expected CONFIRMED, got ${booking.status}`);
+    // Allow CONFIRMED or PICKUP status (for resend)
+    if (!["CONFIRMED", "PICKUP"].includes(booking.status)) {
+      throw new Error(`Invalid status: Expected CONFIRMED or PICKUP, got ${booking.status}`);
     }
 
     // Check if OTP is locked
@@ -93,14 +94,28 @@ class BookingService {
     // Get sender phone from pickup address
     const senderPhone = booking.parcel.pickupAddress.phone;
     const senderName = booking.parcel.pickupAddress.name;
-
-    // Send SMS via Twilio
-    await twilioService.sendPickupOTP(
-      senderPhone,
-      otp,
-      booking.booking_ref,
-      travellerName
-    );
+    
+    // Validate phone number exists
+    if (!senderPhone) {
+      console.warn(`⚠️ [OTP] Pickup address has no phone number. OTP: ${otp} (Booking: ${booking.booking_ref})`);
+      console.log(`📱 [OTP] Pickup OTP generated: ${otp} (No phone number available)`);
+    } else {
+      // Send SMS via Twilio
+      const smsResult = await twilioService.sendPickupOTP(
+        senderPhone,
+        otp,
+        booking.booking_ref,
+        travellerName
+      );
+      
+      if (smsResult.skipped) {
+        console.log(`📱 [OTP] Pickup OTP generated: ${otp} (SMS disabled - check console for OTP)`);
+      } else if (smsResult.success) {
+        console.log(`✅ [OTP] Pickup OTP sent via SMS to ${senderPhone}`);
+      } else {
+        console.warn(`⚠️ [OTP] Failed to send SMS, but OTP generated: ${otp}`);
+      }
+    }
 
     // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
@@ -264,14 +279,28 @@ class BookingService {
     // Get recipient phone from delivery address
     const recipientPhone = booking.parcel.deliveryAddress.phone;
     const recipientName = booking.parcel.deliveryAddress.name;
-
-    // Send SMS via Twilio
-    await twilioService.sendDeliveryOTP(
-      recipientPhone,
-      otp,
-      booking.booking_ref,
-      travellerName
-    );
+    
+    // Validate phone number exists
+    if (!recipientPhone) {
+      console.warn(`⚠️ [OTP] Delivery address has no phone number. OTP: ${otp} (Booking: ${booking.booking_ref})`);
+      console.log(`📱 [OTP] Delivery OTP generated: ${otp} (No phone number available)`);
+    } else {
+      // Send SMS via Twilio
+      const smsResult = await twilioService.sendDeliveryOTP(
+        recipientPhone,
+        otp,
+        booking.booking_ref,
+        travellerName
+      );
+      
+      if (smsResult.skipped) {
+        console.log(`📱 [OTP] Delivery OTP generated: ${otp} (SMS disabled - check console for OTP)`);
+      } else if (smsResult.success) {
+        console.log(`✅ [OTP] Delivery OTP sent via SMS to ${recipientPhone}`);
+      } else {
+        console.warn(`⚠️ [OTP] Failed to send SMS, but OTP generated: ${otp}`);
+      }
+    }
 
     // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
@@ -375,11 +404,18 @@ class BookingService {
         const deliveryAddress = booking.parcel.deliveryAddress;
         const message = `Your parcel has been successfully delivered to ${deliveryAddress.city}! Booking Ref: ${booking.booking_ref}. Thank you for using BookMyParcel.`;
         
-        await twilioService.sendSMS(senderUser.phone_number, message);
-        console.log(`✅ Delivery confirmation SMS sent to sender: ${senderUser.phone_number}`);
+        const smsResult = await twilioService.sendSMS(senderUser.phone_number, message);
+        
+        if (smsResult.skipped) {
+          console.log(`📱 [Delivery Confirmation] SMS disabled - would have sent to: ${senderUser.phone_number}`);
+        } else if (smsResult.success) {
+          console.log(`✅ [Delivery Confirmation] SMS sent to sender: ${senderUser.phone_number}`);
+        } else {
+          console.warn(`⚠️ [Delivery Confirmation] Failed to send SMS to sender: ${senderUser.phone_number}`);
+        }
       }
     } catch (smsError) {
-      console.error("❌ Failed to send delivery confirmation SMS:", smsError.message);
+      console.error("❌ [Delivery Confirmation] Error sending SMS:", smsError.message);
       // Don't throw error - delivery is already successful
     }
 

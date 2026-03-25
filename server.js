@@ -51,8 +51,19 @@ const startServer = async () => {
     setupSocketHandlers(io);
     
     server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`WebSocket server is ready`);
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`🚀 Server is running on port ${PORT}`);
+      console.log(`🔌 WebSocket server is ready`);
+      
+      // SMS Configuration Status
+      const smsEnabled = process.env.TWILIO_SMS_ENABLED === 'true';
+      if (smsEnabled) {
+        console.log(`📱 SMS: ENABLED - OTPs will be sent via Twilio`);
+      } else {
+        console.log(`📱 SMS: DISABLED - OTPs will only be logged to console`);
+      }
+      
+      console.log(`${'='.repeat(60)}\n`);
     });
   } catch (error) {
     console.error("Server startup failed:", error);

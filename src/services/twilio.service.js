@@ -45,6 +45,13 @@ class TwilioService {
   }
 
   async sendSMS(to, message) {
+    // Validate phone number
+    if (!to) {
+      console.warn(`⚠️ [SMS] Cannot send SMS - phone number is null or empty`);
+      console.log(`📱 [SMS] Message content: ${message}`);
+      return { success: false, message: "Phone number is required", skipped: true };
+    }
+    
     // Check if SMS is disabled
     if (!this.smsEnabled) {
       console.log(`📱 SMS (DISABLED - Logging Only): To: ${to}, Message: ${message}`);
