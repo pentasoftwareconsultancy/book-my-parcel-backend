@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
-
+import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import initDatabase from "./src/config/db.init.js";
@@ -10,6 +10,12 @@ import app from "./src/app.js";
 import { seedRoles } from "./src/utils/seedRoles.js";
 import { createDefaultAdmin } from "./src/utils/createDefaultAdmin.js";
 import { setupSocketHandlers } from "./src/utils/socketHandlers.js";
+
+app.use(cors({
+  origin: ["http://localhost:5173", "http://localhost:5173/api"],
+  credentials: true
+}));
+
 const startServer = async () => {
   try {
     await initDatabase();
@@ -35,9 +41,13 @@ const startServer = async () => {
       cors: {
         origin: [
           "http://localhost:5173",
+          "http://localhost:5173/api",
           "http://localhost:3000",
+          "http://localhost:3000/api",
           "http://127.0.0.1:5173",
-          "http://127.0.0.1:3000"
+          "http://127.0.0.1:5173/api",
+          "http://127.0.0.1:3000",
+          "http://127.0.0.1:3000/api"
         ],
         methods: ["GET", "POST"],
         credentials: true

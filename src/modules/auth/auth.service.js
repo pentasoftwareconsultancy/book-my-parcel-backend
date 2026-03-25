@@ -152,6 +152,11 @@ export async function login(email, password, loginRole) {
   const match = await bcrypt.compare(password.trim(), user.password);
   if (!match) throw new Error("Invalid password");
 
+  // 3️⃣ Verify password (plain text - TEMPORARY)
+// if (password.trim() !== user.password) {
+//   throw new Error("Invalid password");
+// }
+
   // 4️⃣ Get roles from DB
   const dbRoles = user.roles.map(r => r.name);
 

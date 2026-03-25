@@ -8,6 +8,7 @@ import travellerRoutes from "./modules/traveller/traveller.routes.js";
 import travellerRouteRoutes from "./modules/traveller/travellerRoute.routes.js";
 import placesRoutes from "./modules/places/places.routes.js";
 import matchingRoutes from "./modules/matching/matching.routes.js";
+import ParcelTracking from "./modules/tracking/parcelTracking.routes.js";
 
 const router = express.Router();
 
@@ -18,6 +19,8 @@ router.use("/parcel", parcelRoutes); // /api/parcel/
 router.use("/parcel", matchingRoutes); // /api/parcel/:id/find-travellers, /api/parcel/:id/acceptances, etc.
 router.use("/places", placesRoutes); // /api/places/autocomplete
 router.use("/user", userRoutes); // /api/user/...
+
+router.use("/tracking", ParcelTracking); // /api/tracking/...
 
 //Travller Routes
 router.use("/traveller", travellerRoutes); // /api/traveller/...
