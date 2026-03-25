@@ -102,17 +102,25 @@ class BookingService {
       travellerName
     );
 
-    // Emit WebSocket event to sender
+    // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
     const io = this.getIO();
     if (io) {
-      io.to(`user_${senderId}`).emit("pickup_otp_generated", {
+      const eventData = {
         booking_id: booking.id,
         pickup_otp: otp,
         traveller_name: travellerName,
         traveller_phone: travellerProfile?.user?.phone,
         message: "Traveller has arrived at pickup location",
-      });
+      };
+      
+      // Emit to sender (user who created the parcel)
+      io.to(`user_${senderId}`).emit("pickup_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted pickup_otp_generated to user_${senderId}`);
+      
+      // Emit to traveller
+      io.to(`user_${travellerId}`).emit("pickup_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted pickup_otp_generated to user_${travellerId}`);
     }
 
     return {
@@ -186,15 +194,23 @@ class BookingService {
       pickup_otp_attempts: 0,
     });
 
-    // Emit WebSocket event
+    // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
     const io = this.getIO();
     if (io) {
-      io.to(`user_${senderId}`).emit("pickup_verified", {
+      const eventData = {
         booking_id: booking.id,
         status: "IN_TRANSIT",
         pickup_verified_at: booking.pickup_verified_at,
-      });
+      };
+      
+      // Emit to sender (user who created the parcel)
+      io.to(`user_${senderId}`).emit("pickup_verified", eventData);
+      console.log(`[WebSocket] Emitted pickup_verified to user_${senderId}`);
+      
+      // Emit to traveller
+      io.to(`user_${travellerId}`).emit("pickup_verified", eventData);
+      console.log(`[WebSocket] Emitted pickup_verified to user_${travellerId}`);
     }
 
     return {
@@ -257,17 +273,25 @@ class BookingService {
       travellerName
     );
 
-    // Emit WebSocket event to recipient (sender in this case, could be different)
+    // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
     const io = this.getIO();
     if (io) {
-      io.to(`user_${senderId}`).emit("delivery_otp_generated", {
+      const eventData = {
         booking_id: booking.id,
         delivery_otp: otp,
         traveller_name: travellerName,
         traveller_phone: travellerProfile?.user?.phone,
         message: "Traveller has arrived at delivery location",
-      });
+      };
+      
+      // Emit to sender (user who created the parcel)
+      io.to(`user_${senderId}`).emit("delivery_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted delivery_otp_generated to user_${senderId}`);
+      
+      // Emit to traveller
+      io.to(`user_${travellerId}`).emit("delivery_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted delivery_otp_generated to user_${travellerId}`);
     }
 
     return {
@@ -359,15 +383,23 @@ class BookingService {
       // Don't throw error - delivery is already successful
     }
 
-    // Emit WebSocket event
+    // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
     const io = this.getIO();
     if (io) {
-      io.to(`user_${senderId}`).emit("delivery_verified", {
+      const eventData = {
         booking_id: booking.id,
         status: "DELIVERED",
         delivered_at: booking.delivered_at,
-      });
+      };
+      
+      // Emit to sender (user who created the parcel)
+      io.to(`user_${senderId}`).emit("delivery_verified", eventData);
+      console.log(`[WebSocket] Emitted delivery_verified to user_${senderId}`);
+      
+      // Emit to traveller
+      io.to(`user_${travellerId}`).emit("delivery_verified", eventData);
+      console.log(`[WebSocket] Emitted delivery_verified to user_${travellerId}`);
     }
 
     return {
