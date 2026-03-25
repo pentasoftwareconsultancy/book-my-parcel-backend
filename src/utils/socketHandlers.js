@@ -4,6 +4,20 @@ export function setupSocketHandlers(io) {
   io.on("connection", (socket) => {
     console.log(`[Socket] User connected: ${socket.id}`);
 
+    // ─── Join user room (for OTP notifications) ───────────────────────────
+    socket.on("join_user", (userId) => {
+      const room = `user_${userId}`;
+      socket.join(room);
+      console.log(`[Socket] User ${socket.id} joined room ${room}`);
+    });
+
+    // ─── Leave user room ──────────────────────────────────────────────────
+    socket.on("leave_user", (userId) => {
+      const room = `user_${userId}`;
+      socket.leave(room);
+      console.log(`[Socket] User ${socket.id} left room ${room}`);
+    });
+
     // ─── Join parcel room ──────────────────────────────────────────────────
     socket.on("join_parcel", (parcelId) => {
       const room = `parcel_${parcelId}`;

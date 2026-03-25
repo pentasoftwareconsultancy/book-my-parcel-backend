@@ -363,91 +363,6 @@ async function createTestParcels(user, addresses, route) {
   });
   bookings.push(booking1);
 
-  // 6. PICKUP - Traveller ready to pickup, OTPs generated
-  const parcel6 = await Parcel.create({
-    user_id: user.id,
-    parcel_ref: "BMP006",
-    pickup_address_id: addresses[5].id,
-    delivery_address_id: addresses[0].id,
-    parcel_type: "Documents",
-    package_size: "small",
-    weight: 1,
-    description: "Legal documents and contracts",
-    price_quote: 120,
-    is_urgent: false,
-    status: "PICKUP"
-  });
-  parcels.push(parcel6);
-
-  const booking2 = await Booking.create({
-    parcel_id: parcel6.id,
-    traveller_id: user.id,
-    booking_ref: "BOOK002",
-    status: "PICKUP",
-    assigned_date: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    pickup_scheduled_time: new Date(),
-    pickup_otp: "1234",
-    delivery_otp: "5678"
-  });
-  bookings.push(booking2);
-
-  // 7. IN_TRANSIT - Parcel picked up, on the way
-  const parcel7 = await Parcel.create({
-    user_id: user.id,
-    parcel_ref: "BMP007",
-    pickup_address_id: addresses[1].id,
-    delivery_address_id: addresses[3].id,
-    parcel_type: "Gifts",
-    package_size: "medium",
-    weight: 6,
-    description: "Birthday gifts and decorations",
-    price_quote: 220,
-    is_urgent: false,
-    status: "IN_TRANSIT"
-  });
-  parcels.push(parcel7);
-
-  const booking3 = await Booking.create({
-    parcel_id: parcel7.id,
-    traveller_id: user.id,
-    booking_ref: "BOOK003",
-    status: "IN_TRANSIT",
-    assigned_date: new Date(Date.now() - 3 * 60 * 60 * 1000),
-    pickup_scheduled_time: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    pickup_actual_time: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    delivery_estimated_time: new Date(Date.now() + 2 * 60 * 60 * 1000)
-  });
-  bookings.push(booking3);
-
-  // 8. DELIVERED - Successfully completed
-  const parcel8 = await Parcel.create({
-    user_id: user.id,
-    parcel_ref: "BMP008",
-    pickup_address_id: addresses[2].id,
-    delivery_address_id: addresses[4].id,
-    parcel_type: "Food",
-    package_size: "large",
-    weight: 10,
-    description: "Homemade sweets and snacks",
-    price_quote: 350,
-    is_urgent: false,
-    status: "DELIVERED"
-  });
-  parcels.push(parcel8);
-
-  const booking4 = await Booking.create({
-    parcel_id: parcel8.id,
-    traveller_id: user.id,
-    booking_ref: "BOOK004",
-    status: "DELIVERED",
-    assigned_date: new Date(Date.now() - 6 * 60 * 60 * 1000),
-    pickup_scheduled_time: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    pickup_actual_time: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    delivery_estimated_time: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    delivery_actual_time: new Date(Date.now() - 30 * 60 * 1000) // 30 minutes ago
-  });
-  bookings.push(booking4);
-
   console.log("✅ Test parcels created successfully");
   console.log(`📊 Created ${parcels.length} parcels, ${parcelRequests.length} requests, ${bookings.length} bookings`);
   
@@ -481,18 +396,12 @@ async function seedTestData() {
     console.log("- CREATED: 1 (just created, matching in progress)");
     console.log("- MATCHING: 3 (finding travellers)");
     console.log("- CONFIRMED: 1 (booking created, waiting pickup)");
-    console.log("- PICKUP: 1 (ready for pickup)");
-    console.log("- IN_TRANSIT: 1 (on the way)");
-    console.log("- DELIVERED: 1 (completed)");
     
     console.log("\nTraveller Side (Request/Booking Status):");
     console.log("- SENT: 1 (request sent, awaiting response)");
     console.log("- ACCEPTED: 1 (accepted by traveller)");
     console.log("- SELECTED: 1 (selected by user)");
     console.log("- CONFIRMED: 1 (booking confirmed)");
-    console.log("- PICKUP: 1 (ready for pickup with OTPs)");
-    console.log("- IN_TRANSIT: 1 (parcel picked up)");
-    console.log("- DELIVERED: 1 (successfully delivered)");
     
     console.log(`\n🔑 Login Credentials:`);
     console.log(`Email: ${TEST_USER_EMAIL}`);
