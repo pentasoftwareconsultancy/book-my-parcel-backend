@@ -46,3 +46,27 @@ export const parcelCreationLimiter = rateLimit({
     message: "Too many parcel creation attempts. Please try again in a few minutes."
   }
 });
+
+// OTP generation limiter (prevent spam)
+export const otpGenerationLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 5, // Max 5 OTP requests per 5 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many OTP requests. Please try again in a few minutes."
+  }
+});
+
+// OTP verification limiter (prevent brute force)
+export const otpVerificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Max 10 verification attempts per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many OTP verification attempts. Please try again later."
+  }
+});

@@ -33,6 +33,7 @@
     "ps": "^1.0.0",
     "razorpay": "^2.9.6",
     "sequelize": "^6.37.7",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "twilio": "^5.3.7"
   }
 }
