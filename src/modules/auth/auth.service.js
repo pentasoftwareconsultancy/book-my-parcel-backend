@@ -25,24 +25,19 @@ export { generateToken };
  */
 export async function signup(userData) {
 
-console.log("Signup data:", userData); 
-
   // 1️Validate
   validateSignupData(userData);
 
   // 2️ Hash password
   const hashedPassword = await bcrypt.hash(userData.password, 10);
-  console.log("Hashed password:", hashedPassword); // Debug log
 
   return await sequelize.transaction(async (t) => {
-    console.log("Transaction started"); // Debug log
 
     // 3️Check duplicate email
     const existingEmail = await User.findOne({
       where: { email: userData.email },
       transaction: t
     });
-    console.log("Existing email check:", existingEmail); // Debug log
     if (existingEmail) throw new Error("Email already registered");
 
 
@@ -51,7 +46,6 @@ console.log("Signup data:", userData);
       where: { phone_number: userData.phone_number },
       transaction: t
     });
-    console.log("Existing phone check:", existingPhone); // Debug log
     if (existingPhone) throw new Error("Phone number already registered");
 
     // 5️ Create User 
@@ -61,8 +55,6 @@ console.log("Signup data:", userData);
       phone_number:    userData.phone_number,
       alternate_phone: userData.alternate_phone || null,
     }, { transaction: t });
-
-    console.log("User created:", user.id); // Debug log
 
     // 6 Create UserProfile 
     // ✅ full_name, address, city, state → user_profiles only
@@ -225,7 +217,6 @@ export async function getUserProfile(userId) {
 
 export async function updateProfile(userId, updateData) {
   const user = await User.findByPk(userId);
-  console.log("Updating profile for user:", userId, "with data:", updateData); // Debug log
 
   if (!user) {
     throw new Error("User not found");
@@ -237,8 +228,6 @@ export async function updateProfile(userId, updateData) {
     await checkDuplicateEmail(updateData.email, userId);
   }
 
-  console.log("Email validation passed"); // Debug log
-
   // 🔥 PHONE VALIDATION
   if (
     updateData.phone_number &&
@@ -247,7 +236,6 @@ export async function updateProfile(userId, updateData) {
     validatePhone(updateData.phone_number);
     await checkDuplicatePhone(updateData.phone_number, userId);
   }
-  console.log("Phone validation passed"); // Debug log
 
   // 1. Update USER table (only authentication fields)
   await user.update({
@@ -256,12 +244,10 @@ export async function updateProfile(userId, updateData) {
     alternate_phone: updateData.alternate_phone ?? user.alternate_phone,
   });
 
-  console.log("User table updated"); // Debug log
   // 2. Update UserProfile table (personal info)
   const userProfile = await UserProfile.findOne({
     where: { user_id: userId },
   });
-  console.log("UserProfile found:", !!userProfile); // Debug log
 
   if (userProfile) {
     await userProfile.update({
@@ -273,8 +259,6 @@ export async function updateProfile(userId, updateData) {
       avatar_url: updateData.avatar_url ?? userProfile.avatar_url,
     });
   }
-
-  console.log("UserProfile updated"); // Debug log
 
   // 3. Update TravellerProfile table (vehicle info)
   const travellerProfile = await TravellerProfile.findOne({
@@ -291,7 +275,6 @@ export async function updateProfile(userId, updateData) {
       is_available: updateData.is_available ?? travellerProfile.is_available,
     });
   }
-  console.log("TravellerProfile updated"); // Debug log
 
   return {
     user,

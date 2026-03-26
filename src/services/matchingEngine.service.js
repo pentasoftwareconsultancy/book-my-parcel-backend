@@ -1,6 +1,6 @@
 import sequelize from "../config/database.config.js";
 import { Op } from "sequelize";
-import { Parcel, Address, TravellerRoute, TravellerProfile, ParcelRequest, RoutePlace } from "../modules/associations.js";
+import { Parcel, Address, TravellerRoute, TravellerProfile, ParcelRequest } from "../modules/associations.js";
 import { computeRoute } from "./googleMaps.service.js";
 import { findRoutesBetweenPoints, findRoutesWithinBuffer } from "./spatialMatching.service.js";
 
@@ -52,6 +52,12 @@ async function findCandidateTravellers(parcelData) {
   const candidates = new Set();
 
   try {
+    // Skip if pickup and delivery are the same city (same-city deliveries not supported yet)
+    if (parcelData.pickup.city === parcelData.delivery.city) {
+      console.log(`[Matching] Skipping same-city parcel: ${parcelData.pickup.city} → ${parcelData.delivery.city}`);
+      return [];
+    }
+
     // Method A: Place-ID matching via route_places table
     if (parcelData.pickup.place_id && parcelData.delivery.place_id) {
       const placeMatches = await sequelize.query(
@@ -310,8 +316,12 @@ async function createParcelRequests(parcelId, candidates) {
   const requests = [];
   const expiresAt = new Date(Date.now() + REQUEST_EXPIRY_MINUTES * 60 * 1000);
 
+  console.log(`[createParcelRequests] Creating requests for parcel ${parcelId} with ${candidates.length} candidates`);
+
   for (const candidate of candidates) {
     try {
+      console.log(`[createParcelRequests] Creating request for traveller ${candidate.travellerProfile.user_id}, route ${candidate.id}`);
+      
       const request = await ParcelRequest.create({
         parcel_id: parcelId,
         traveller_id: candidate.travellerProfile.user_id,
@@ -323,12 +333,14 @@ async function createParcelRequests(parcelId, candidates) {
         expires_at: expiresAt,
       });
 
+      console.log(`[createParcelRequests] ✅ Created request ${request.id} for parcel ${parcelId}`);
       requests.push(request);
     } catch (error) {
       console.error(`[Matching] Error creating request for traveller ${candidate.travellerProfile.user_id}:`, error.message);
     }
   }
 
+  console.log(`[createParcelRequests] Created ${requests.length} requests for parcel ${parcelId}`);
   return requests;
 }
 

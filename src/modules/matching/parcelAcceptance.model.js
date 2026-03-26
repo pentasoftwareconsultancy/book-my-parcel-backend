@@ -55,3 +55,26 @@ const ParcelAcceptance = sequelize.define(
 );
 
 export default ParcelAcceptance;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

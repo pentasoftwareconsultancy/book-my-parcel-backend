@@ -4,6 +4,7 @@ import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import trackingSocket from "./socket/trackingSocket.js";
+import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -52,5 +53,8 @@ app.use("/uploads", express.static("uploads"));
 app.get("/", (req, res) => {
   res.status(200).json({ message: "Book My Parcel Backend is running!" });
 });
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 export default app;

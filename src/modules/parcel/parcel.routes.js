@@ -1,6 +1,7 @@
 import express from "express";
-import { createParcel, getParcelById, getUserRequests } from "./parcel.controller.js";
+import { createParcel, getParcelById, getUserRequests, updateParcelStep } from "./parcel.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { generalLimiter, parcelCreationLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { upload } from "../../utils/fileUpload.util.js";
 import {
   validateRequest,
@@ -10,14 +11,25 @@ import {
 
 const router = express.Router();
 
-// Route: Create Parcel Request (Sender)
+// Route: Create Parcel Request (Sender) - Use lenient limiter
 router.post(
   "/request",
   authMiddleware,
+  parcelCreationLimiter, // More lenient rate limit for parcel creation
   upload.array("parcel_photos", 3),         // multer must run before validation
   parseJsonFields("pickup_address", "delivery_address"), // parse JSON strings from multipart
   validateRequest(parcelRequestSchema),
   createParcel
+);
+
+// Apply general rate limiting to other parcel routes
+router.use(generalLimiter);
+
+// Route: Update parcel form step
+router.patch(
+  "/:id/step",
+  authMiddleware,
+  updateParcelStep
 );
 
 // Get all parcels of logged-in user

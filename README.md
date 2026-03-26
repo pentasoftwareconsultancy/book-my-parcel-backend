@@ -41,7 +41,7 @@ A comprehensive logistics platform backend that connects parcel senders with tra
 
 ## 🚀 Quick Start
 
-### 1. Installation
+### 1. Clone & Install
 
 ```bash
 # Clone the repository
@@ -58,13 +58,17 @@ npm install
 # Create PostgreSQL database
 createdb book_my_parcel
 
-# Enable PostGIS extension
-psql book_my_parcel -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+# Connect to database and enable PostGIS
+psql book_my_parcel
+
+# Inside psql, run:
+CREATE EXTENSION IF NOT EXISTS postgis;
+\q
 ```
 
 ### 3. Environment Configuration
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the backend root directory:
 
 ```env
 # Database Configuration
@@ -97,23 +101,80 @@ CORS_ORIGIN=http://localhost:5173
 FCM_SERVER_KEY=your_fcm_server_key_here
 ```
 
-### 4. Database Migration
+### 4. Run Database Migrations
 
 ```bash
-# Run migrations to set up database schema
-npm run migrate
+# Run all migrations to create tables and schema
+node scripts/runMigrations.js
 
-# Seed initial data (optional)
-npm run seed
+# Or manually run migrations
+npm run migrate
 ```
 
-### 5. Start Development Server
+### 5. Seed Test Data (Optional)
 
 ```bash
+# Seed database with test users and data
+node scripts/seedTestData.js
+```
+
+### 6. Start the Server
+
+```bash
+# Development mode (with nodemon)
+npm run dev
+
+# Production mode
 npm start
 ```
 
 The server will start on `http://localhost:3000`
+
+### 7. Verify Installation
+
+```bash
+# Test the API
+curl http://localhost:3000/
+
+# Expected response:
+# {"message": "Book My Parcel Backend is running!"}
+```
+
+## 🖥️ Frontend Setup
+
+```bash
+# Navigate to frontend directory
+cd ../frontend
+
+# Install dependencies
+npm install
+
+# Create .env file
+echo "VITE_API_URL=http://localhost:3000/api" > .env
+echo "VITE_BASE_URL=http://localhost:3000" >> .env
+
+# Start development server
+npm run dev
+```
+
+Frontend will run on `http://localhost:5173`
+
+## 🔄 Common Commands
+
+```bash
+# Backend
+npm start              # Start server
+npm run dev            # Start with nodemon (auto-reload)
+npm run migrate        # Run database migrations
+node scripts/seedTestData.js  # Seed test data
+node scripts/clearData.js     # Clear all data
+node scripts/clearAllDataKeepUsers.js  # Clear data but keep users
+
+# Frontend
+npm run dev            # Start Vite dev server
+npm run build          # Build for production
+npm run preview        # Preview production build
+```
 
 ## 📁 Project Structure
 
@@ -246,24 +307,100 @@ The system uses a sophisticated 5-stage matching pipeline:
 
 ## 🚀 Deployment
 
-### Environment Variables
-Ensure all required environment variables are set in production:
-- Database credentials
-- Google Maps API keys
-- JWT secrets
-- FCM configuration
+### Production Checklist
 
-### Database Setup
-1. Create PostgreSQL database with PostGIS extension
-2. Run migrations: `npm run migrate`
-3. Seed initial data: `npm run seed`
+1. **Environment Variables**
+   - Set `NODE_ENV=production`
+   - Use strong JWT secrets
+   - Configure production database
+   - Set up proper CORS origins
+   - Add production Google Maps API keys
 
-### Process Management
-Use PM2 or similar for production deployment:
+2. **Database Setup**
+   ```bash
+   # Create production database
+   createdb book_my_parcel_prod
+   
+   # Enable PostGIS
+   psql book_my_parcel_prod -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+   
+   # Run migrations
+   NODE_ENV=production node scripts/runMigrations.js
+   ```
 
+3. **Process Management**
+   ```bash
+   # Install PM2
+   npm install -g pm2
+   
+   # Start application
+   pm2 start server.js --name "bmp-backend"
+   
+   # Save PM2 configuration
+   pm2 save
+   
+   # Set up auto-restart on reboot
+   pm2 startup
+   ```
+
+4. **Security**
+   - Enable HTTPS
+   - Configure firewall rules
+   - Set up rate limiting (already configured)
+   - Regular security updates
+   - Database backups
+
+### Vercel/Railway/Render Deployment
+
+1. Connect your Git repository
+2. Set environment variables in dashboard
+3. Configure build command: `npm install`
+4. Configure start command: `npm start`
+5. Deploy
+
+## 🐛 Troubleshooting
+
+### Database Connection Issues
 ```bash
-npm install -g pm2
-pm2 start server.js --name "bmp-backend"
+# Check PostgreSQL is running
+pg_isready
+
+# Check database exists
+psql -l | grep book_my_parcel
+
+# Test connection
+psql -h localhost -U your_user -d book_my_parcel
+```
+
+### Migration Issues
+```bash
+# Check migration status
+node scripts/runMigrations.js
+
+# Reset database (WARNING: deletes all data)
+node scripts/clearData.js
+node scripts/runMigrations.js
+```
+
+### Port Already in Use
+```bash
+# Find process using port 3000
+netstat -ano | findstr :3000  # Windows
+lsof -i :3000                 # Mac/Linux
+
+# Kill the process
+taskkill /PID <PID> /F        # Windows
+kill -9 <PID>                 # Mac/Linux
+```
+
+### Missing Dependencies
+```bash
+# Clear node_modules and reinstall
+rm -rf node_modules package-lock.json
+npm install
+
+# Install missing package
+npm install express-rate-limit
 ```
 
 ## 📊 Monitoring & Logging

@@ -65,6 +65,13 @@ export function emitParcelSelected(io, parcelId, selectionData) {
   console.log(`[Socket] Emitted parcel_selected to room ${room}`);
 }
 
+// ─── Emit traveller selected notification ──────────────────────────────────
+export function emitTravellerSelected(io, travellerId, selectionData) {
+  const room = `traveller_requests_${travellerId}`;
+  io.to(room).emit("traveller_selected", selectionData);
+  console.log(`[Socket] Emitted traveller_selected to room ${room}`);
+}
+
 // ─── Emit new request to traveller ──────────────────────────────────────────
 export function emitNewRequest(io, travellerId, requestData) {
   const room = `traveller_requests_${travellerId}`;
