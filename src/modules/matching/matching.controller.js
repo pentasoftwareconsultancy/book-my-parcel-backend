@@ -593,13 +593,17 @@ export async function selectTraveller(req, res) {
     );
 
     if (!booking) {
-      const bookingRef = `BK-${new Date().getFullYear()}-${String(parcelId).slice(0, 8).toUpperCase()}`;
+      // Create booking WITHOUT booking_ref and tracking_ref
+      // These will be generated later:
+      // - booking_ref: when Step 3 (payment) is completed
+      // - tracking_ref: when status changes to IN_TRANSIT
       booking = await Booking.create(
         {
           parcel_id: parcelId,
           traveller_id,
           status: "CONFIRMED",
-          booking_ref: bookingRef,
+          booking_ref: null,    // Will be generated in Step 3
+          tracking_ref: null,   // Will be generated when IN_TRANSIT
         },
         { transaction: t }
       );

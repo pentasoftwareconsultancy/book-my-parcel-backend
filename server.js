@@ -36,7 +36,7 @@ const startServer = async () => {
     // Create HTTP server
     const server = createServer(app);
     
-    // Initialize Socket.IO
+    // Initialize Socket.IO with extended timeout settings
     const io = new Server(server, {
       cors: {
         origin: [
@@ -51,7 +51,19 @@ const startServer = async () => {
         ],
         methods: ["GET", "POST"],
         credentials: true
-      }
+      },
+      // Connection timeout settings
+      pingTimeout: 60000,        // 60 seconds - how long to wait for pong before considering connection dead
+      pingInterval: 25000,       // 25 seconds - how often to send ping packets
+      connectTimeout: 45000,     // 45 seconds - connection timeout before giving up
+      // Upgrade timeout
+      upgradeTimeout: 10000,     // 10 seconds - time to wait for upgrade from polling to websocket
+      // Max HTTP buffer size
+      maxHttpBufferSize: 1e6,    // 1MB
+      // Allow upgrades
+      allowUpgrades: true,
+      // Transports
+      transports: ['websocket', 'polling']
     });
     
     // Make io available to the app
