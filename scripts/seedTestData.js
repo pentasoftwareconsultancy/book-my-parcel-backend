@@ -11,6 +11,7 @@ import Booking from "../src/modules/booking/booking.model.js";
 import Role from "../src/modules/user/role.model.js";
 import UserRole from "../src/modules/user/userRole.model.js";
 import bcrypt from "bcrypt";
+import { generateParcelId, generateBookingId, generateTrackingId } from "../src/utils/idGenerator.js";
 
 const TEST_USER_EMAIL = "vivekjangam126@gmail.com";
 const TEST_USER_PASSWORD = "Vivek@1260";
@@ -248,7 +249,7 @@ async function createTestParcels(user, addresses, route) {
   // 1. CREATED - User just created parcel, matching in progress
   const parcel1 = await Parcel.create({
     user_id: user.id,
-    parcel_ref: "BMP001",
+    parcel_ref: await generateParcelId(),
     pickup_address_id: addresses[0].id,
     delivery_address_id: addresses[1].id,
     parcel_type: "Documents",
@@ -264,7 +265,7 @@ async function createTestParcels(user, addresses, route) {
   // 2. MATCHING - System is finding travellers
   const parcel2 = await Parcel.create({
     user_id: user.id,
-    parcel_ref: "BMP002", 
+    parcel_ref: await generateParcelId(), 
     pickup_address_id: addresses[1].id,
     delivery_address_id: addresses[2].id,
     parcel_type: "Electronics",
@@ -294,7 +295,7 @@ async function createTestParcels(user, addresses, route) {
   // 3. MATCHING with ACCEPTED request
   const parcel3 = await Parcel.create({
     user_id: user.id,
-    parcel_ref: "BMP003",
+    parcel_ref: await generateParcelId(),
     pickup_address_id: addresses[2].id,
     delivery_address_id: addresses[3].id,
     parcel_type: "Clothing",
@@ -325,7 +326,7 @@ async function createTestParcels(user, addresses, route) {
   // 4. MATCHING with SELECTED request (user selected this traveller)
   const parcel4 = await Parcel.create({
     user_id: user.id,
-    parcel_ref: "BMP004",
+    parcel_ref: await generateParcelId(),
     pickup_address_id: addresses[3].id,
     delivery_address_id: addresses[4].id,
     parcel_type: "Books",
@@ -355,7 +356,7 @@ async function createTestParcels(user, addresses, route) {
   // 5. CONFIRMED - Booking created, waiting for pickup
   const parcel5 = await Parcel.create({
     user_id: user.id,
-    parcel_ref: "BMP005",
+    parcel_ref: await generateParcelId(),
     pickup_address_id: addresses[4].id,
     delivery_address_id: addresses[5].id,
     parcel_type: "Electronics",
@@ -371,7 +372,8 @@ async function createTestParcels(user, addresses, route) {
   const booking1 = await Booking.create({
     parcel_id: parcel5.id,
     traveller_id: user.id,
-    booking_ref: "BOOK001",
+    booking_ref: await generateBookingId(),
+    tracking_ref: await generateTrackingId(),
     status: "CONFIRMED",
     assigned_date: new Date(),
     pickup_scheduled_time: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now

@@ -201,13 +201,23 @@ class BookingService {
       throw error;
     }
 
-    // OTP is correct - update status to IN_TRANSIT
-    await booking.update({
+    // ✅ OTP is correct - Generate Tracking ID and update status to IN_TRANSIT
+    const updateData = {
       status: "IN_TRANSIT",
       pickup_otp: null, // Clear OTP for security
       pickup_verified_at: new Date(),
       pickup_otp_attempts: 0,
-    });
+    };
+    
+    // Generate Tracking ID if not already generated
+    if (!booking.tracking_ref) {
+      const { generateTrackingId } = await import("../utils/idGenerator.js");
+      const trackingRef = await generateTrackingId();
+      updateData.tracking_ref = trackingRef;
+      console.log(`[Booking] Tracking ID generated: ${trackingRef}`);
+    }
+    
+    await booking.update(updateData);
 
     // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;

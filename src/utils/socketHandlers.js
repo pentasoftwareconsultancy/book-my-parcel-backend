@@ -4,6 +4,11 @@ export function setupSocketHandlers(io) {
   io.on("connection", (socket) => {
     console.log(`[Socket] User connected: ${socket.id}`);
 
+    // ─── Heartbeat/Keepalive ──────────────────────────────────────────────
+    socket.on("ping", () => {
+      socket.emit("pong");
+    });
+
     // ─── Join user room (for OTP notifications) ───────────────────────────
     socket.on("join_user", (userId) => {
       const room = `user_${userId}`;

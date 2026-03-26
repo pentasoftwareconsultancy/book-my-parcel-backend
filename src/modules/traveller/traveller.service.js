@@ -97,8 +97,8 @@ export async function fetchTravellerDeliveries(travellerUserId, query) {
 
     return {
       id:         booking.id,
-      bookingId:  `BMP${booking.id.substring(0, 8).toUpperCase()}`,
-      trackingId: `BMP${booking.id.substring(0, 12).toUpperCase()}`,
+      bookingId:  booking.booking_ref || booking.bookingRef || `TEMP-${booking.id.substring(0, 8).toUpperCase()}`,
+      trackingId: booking.tracking_ref || booking.trackingRef || `TEMP-${booking.id.substring(0, 12).toUpperCase()}`,
       status:     booking.status,
       customer:   sender?.profile?.name || "Unknown Customer",
       customerPhone: sender?.phone_number || "",
@@ -223,7 +223,7 @@ export async function fetchTravellerParcelRequests(travellerUserId, query = {}) 
 
       return {
         id: request.id,
-        parcelId: parcel?.id,
+        parcelId: parcel?.parcel_ref || parcel?.id, // Use parcel_ref instead of UUID
         requestId: `REQ${request.id.substring(0, 8).toUpperCase()}`,
         status: request.status,
         customer: sender?.profile?.name || "Unknown Customer",

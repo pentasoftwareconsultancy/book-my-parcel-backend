@@ -27,22 +27,22 @@ async function getNextSerial(Model, field, prefix) {
     }
   }
 
-  return String(maxSerial + 1).padStart(4, "0");
+  return String(maxSerial + 1).padStart(3, "0");
 }
 
-// ─── Parcel ID → BMP-PRC-0001 ────────────────────────────────────────────────
+// ─── Parcel ID → BMP-001 ─────────────────────────────────────────────────────
 export async function generateParcelId() {
-  const serial = await getNextSerial(Parcel, "parcel_ref", "BMP-PRC-");
-  return `BMP-PRC-${serial}`;
+  const serial = await getNextSerial(Parcel, "parcel_ref", "BMP-");
+  return `BMP-${serial}`;
 }
 
-// ─── Booking ID → IND091-0001 ────────────────────────────────────────────────
+// ─── Booking ID → IND091-001 ─────────────────────────────────────────────────
 export async function generateBookingId() {
   const serial = await getNextSerial(Booking, "booking_ref", "IND091-");
   return `IND091-${serial}`;
 }
 
-// ─── Tracking ID → UBG-0001 ──────────────────────────────────────────────────
+// ─── Tracking ID → UBG-001 ───────────────────────────────────────────────────
 export async function generateTrackingId() {
   const serial = await getNextSerial(Booking, "tracking_ref", "UBG-");
   return `UBG-${serial}`;

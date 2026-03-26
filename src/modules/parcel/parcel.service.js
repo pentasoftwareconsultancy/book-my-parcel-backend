@@ -418,6 +418,37 @@ export async function updateParcelStep(parcelId, stepData) {
 
     await parcel.update(updateData);
     
+    // ✅ NEW: Generate Booking ID when Step 3 is completed (payment)
+    if (stepData.form_step === 3) {
+      console.log(`[updateParcelStep] Step 3 completed - Creating booking with Booking ID`);
+      
+      // Check if booking already exists
+      let booking = await Booking.findOne({ where: { parcel_id: parcelId } });
+      
+      if (!booking && parcel.selected_partner_id) {
+        // Generate Booking ID
+        const { generateBookingId } = await import("../../utils/idGenerator.js");
+        const bookingRef = await generateBookingId();
+        
+        // Create booking with Booking ID (but NO tracking ID yet)
+        booking = await Booking.create({
+          parcel_id: parcelId,
+          traveller_id: parcel.selected_partner_id,
+          status: "CONFIRMED",
+          booking_ref: bookingRef,
+          tracking_ref: null, // Will be generated when IN_TRANSIT
+        });
+        
+        console.log(`[updateParcelStep] Booking created with ID: ${bookingRef}`);
+      } else if (booking && !booking.booking_ref) {
+        // Update existing booking with Booking ID
+        const { generateBookingId } = await import("../../utils/idGenerator.js");
+        const bookingRef = await generateBookingId();
+        await booking.update({ booking_ref: bookingRef });
+        console.log(`[updateParcelStep] Booking updated with ID: ${bookingRef}`);
+      }
+    }
+    
     console.log(`[updateParcelStep] Updated parcel ${parcelId} to step ${stepData.form_step}`);
     
     return parcel;
