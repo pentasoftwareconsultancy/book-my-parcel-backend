@@ -7,6 +7,7 @@ import twilioService from "../../services/twilio.service.js";
 import otpConfig from "../../config/otp.config.js";
 import app from "../../app.js";
 
+
 class BookingService {
   // Get io instance
   getIO() {
@@ -211,7 +212,7 @@ class BookingService {
     
     // Generate Tracking ID if not already generated
     if (!booking.tracking_ref) {
-      const { generateTrackingId } = await import("../utils/idGenerator.js");
+      const { generateTrackingId } = await import("../../utils/idGenerator.js");
       const trackingRef = await generateTrackingId();
       updateData.tracking_ref = trackingRef;
       console.log(`[Booking] Tracking ID generated: ${trackingRef}`);
