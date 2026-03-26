@@ -42,10 +42,10 @@ const startServer = async () => {
         methods: ["GET", "POST"],
         credentials: true
       },
-      // Connection timeout settings
-      pingTimeout: 60000,        // 60 seconds - how long to wait for pong before considering connection dead
-      pingInterval: 25000,       // 25 seconds - how often to send ping packets
-      connectTimeout: 45000,     // 45 seconds - connection timeout before giving up
+      // Connection timeout settings - increased for better stability
+      pingTimeout: 120000,       // 2 minutes - how long to wait for pong before considering connection dead
+      pingInterval: 30000,       // 30 seconds - how often to send ping packets
+      connectTimeout: 60000,     // 1 minute - connection timeout before giving up
       // Upgrade timeout
       upgradeTimeout: 10000,     // 10 seconds - time to wait for upgrade from polling to websocket
       // Max HTTP buffer size
