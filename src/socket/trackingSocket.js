@@ -1,40 +1,40 @@
-export default function trackingSocket(io, socket) {
+// export default function trackingSocket(io, socket) {
 
-  // Join booking room
-  socket.on("join-booking", (bookingId) => {
-    console.log("JOIN EVENT RECEIVED:", bookingId);
-    const room = `booking_${bookingId}`;
+//   // Join booking room
+//   socket.on("join-booking", (bookingId) => {
+//     console.log("JOIN EVENT RECEIVED:", bookingId);
+//     const room = `booking_${bookingId}`;
 
-    socket.join(room);
+//     socket.join(room);
 
-    console.log("JOINED ROOM:", socket.id, room);
+//     console.log("JOINED ROOM:", socket.id, room);
 
-  });
+//   });
 
 
-  // Traveller sending location
-  socket.on("traveller-location", ({ bookingId, lat, lng }) => {
-    console.log("LOCATION RECEIVED:", bookingId, lat, lng);
-    const room = `booking_${bookingId}`;
+//   // Traveller sending location
+//   socket.on("traveller-location", ({ bookingId, lat, lng }) => {
+//     console.log("LOCATION RECEIVED:", bookingId, lat, lng);
+//     const room = `booking_${bookingId}`;
 
-    io.to(room).emit("location-update", {
-      lat,
-      lng,
-      timestamp: Date.now(),
-    });
-    console.log("📡 EMITTED TO ROOM:", room);
-  });
+//     io.to(room).emit("location-update", {
+//       lat,
+//       lng,
+//       timestamp: Date.now(),
+//     });
+//     console.log("📡 EMITTED TO ROOM:", room);
+//   });
 
-socket.on("join-booking", (bookingId) => {
-  const room = `booking_${bookingId}`;
+// // socket.on("join-booking", (bookingId) => {
+// //   const room = `booking_${bookingId}`;
 
-  socket.join(room);
+// //   socket.join(room);
 
-  console.log("JOINED ROOM:", socket.id, room);
+// //   console.log("JOINED ROOM:", socket.id, room);
 
-  // 🔥 ADD THIS
-  const clients = io.sockets.adapter.rooms.get(room);
-  console.log("ROOM USERS:", room, clients);
-});
+// //   // 🔥 ADD THIS
+// //   const clients = io.sockets.adapter.rooms.get(room);
+// //   console.log("ROOM USERS:", room, clients);
+// // });
 
-}
+// }
