@@ -131,6 +131,7 @@ export const parcelRequestSchema = Joi.object({
   width:          Joi.number().min(0).optional().allow(null),
   height:         Joi.number().min(0).optional().allow(null),
   description:    Joi.string().max(500).optional().allow("", null),
+  delivery_speed: Joi.string().optional(),
   parcel_type:    Joi.string().max(100).optional().allow("", null), // user content type e.g. "Documents"
   value:          Joi.number().min(0).optional().allow(null),
   notes:          Joi.string().max(500).optional().allow("", null),

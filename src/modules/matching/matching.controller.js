@@ -38,6 +38,18 @@ export async function findTravellers(req, res) {
     // Update parcel status to MATCHING
     await parcel.update({ status: "MATCHING" });
 
+    // Emit WebSocket event to user
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`user_${parcel.user_id}`).emit("parcel_matching", {
+        parcel_id: parcelId,
+        status: "MATCHING",
+        requests_sent: result.requestsSent,
+        message: "Finding nearby travellers for your parcel",
+      });
+      console.log(`[Socket] Emitted parcel_matching to user_${parcel.user_id}`);
+    }
+
     // Send notifications to travellers
     if (result.requests && result.requests.length > 0) {
       const travellersToNotify = result.requests.map((r) => r.traveller_id);
@@ -510,8 +522,8 @@ export async function selectTraveller(req, res) {
     // Verify parcel exists and belongs to user
     const parcel = await Parcel.findByPk(parcelId, { 
       include: [
-        { model: Address, as: "pickupAddress", attributes: ["city"] },
-        { model: Address, as: "deliveryAddress", attributes: ["city"] }
+        { model: Address, as: "pickupAddress" },
+        { model: Address, as: "deliveryAddress" }
       ],
       transaction: t 
     });
@@ -581,13 +593,17 @@ export async function selectTraveller(req, res) {
     );
 
     if (!booking) {
-      const bookingRef = `BK-${new Date().getFullYear()}-${String(parcelId).slice(0, 8).toUpperCase()}`;
+      // Create booking WITHOUT booking_ref and tracking_ref
+      // These will be generated later:
+      // - booking_ref: when Step 3 (payment) is completed
+      // - tracking_ref: when status changes to IN_TRANSIT
       booking = await Booking.create(
         {
           parcel_id: parcelId,
           traveller_id,
           status: "CONFIRMED",
-          booking_ref: bookingRef,
+          booking_ref: null,    // Will be generated in Step 3
+          tracking_ref: null,   // Will be generated when IN_TRANSIT
         },
         { transaction: t }
       );
@@ -660,10 +676,14 @@ export async function selectTraveller(req, res) {
         final_price: finalPrice,
         message: "Congratulations! You've been selected for this parcel delivery!",
         parcel_details: {
+          pickup_address: parcel.pickupAddress,
+          delivery_address: parcel.deliveryAddress,
           pickup_city: parcel.pickupAddress?.city,
           delivery_city: parcel.deliveryAddress?.city,
           weight: parcel.weight,
-          price: finalPrice
+          size: parcel.package_size,
+          price: finalPrice,
+          pickup_date: parcel.pickup_date,
         }
       });
     }

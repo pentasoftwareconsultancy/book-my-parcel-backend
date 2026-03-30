@@ -14,6 +14,15 @@ const Booking = sequelize.define("booking", {
   // OTP fields for verification
   pickup_otp: { type: DataTypes.STRING(4), allowNull: true },
   delivery_otp: { type: DataTypes.STRING(4), allowNull: true },
+  // OTP tracking fields
+  pickup_otp_generated_at: { type: DataTypes.DATE, allowNull: true },
+  pickup_otp_attempts: { type: DataTypes.INTEGER, defaultValue: 0 },
+  pickup_verified_at: { type: DataTypes.DATE, allowNull: true },
+  delivery_otp_generated_at: { type: DataTypes.DATE, allowNull: true },
+  delivery_otp_attempts: { type: DataTypes.INTEGER, defaultValue: 0 },
+  delivered_at: { type: DataTypes.DATE, allowNull: true },
+  pickup_otp_locked_until: { type: DataTypes.DATE, allowNull: true },
+  delivery_otp_locked_until: { type: DataTypes.DATE, allowNull: true },
 }, {
   freezeTableName: true,
   timestamps: true
