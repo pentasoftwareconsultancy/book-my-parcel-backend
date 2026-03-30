@@ -635,13 +635,18 @@ export async function selectTraveller(req, res) {
       { transaction: t }
     );
 
+    // Store rejected traveler IDs for WebSocket notifications
+    const rejectedTravellerIds = [];
+
     for (const otherAcc of otherAcceptances) {
       await otherAcc.request.update(
         { status: "NOT_SELECTED" },
         { transaction: t }
       );
 
-      // Notify rejected travellers
+      rejectedTravellerIds.push(otherAcc.traveller_id);
+
+      // Notify rejected travellers via push notification
       await sendToTraveller(
         otherAcc.traveller_id,
         "Parcel Assigned to Another Traveller",
@@ -655,13 +660,14 @@ export async function selectTraveller(req, res) {
 
     await t.commit();
 
-    // Emit WebSocket events
+    // Emit WebSocket events AFTER commit
     if (req.app.get("io")) {
       const io = req.app.get("io");
       
       // Emit to parcel room
       io.to(`parcel_${parcelId}`).emit("parcel_selected", {
         parcel_id: parcelId,
+        parcel_ref: parcel.parcel_ref, // Add parcel_ref for better matching
         traveller_id,
         booking_id: booking.id,
         booking_ref: booking.booking_ref,
@@ -671,6 +677,8 @@ export async function selectTraveller(req, res) {
       // Emit specific notification to selected traveller
       io.to(`traveller_requests_${traveller_id}`).emit("traveller_selected", {
         parcel_id: parcelId,
+        parcel_ref: parcel.parcel_ref, // Add parcel_ref for better matching
+        request_id: acceptance.request.id, // Add request_id for better filtering
         booking_id: booking.id,
         booking_ref: booking.booking_ref,
         final_price: finalPrice,
@@ -686,6 +694,17 @@ export async function selectTraveller(req, res) {
           pickup_date: parcel.pickup_date,
         }
       });
+
+      // Emit rejection notifications to all other travellers
+      for (const rejectedId of rejectedTravellerIds) {
+        io.to(`traveller_requests_${rejectedId}`).emit("request_not_selected", {
+          parcel_id: parcelId,
+          request_id: otherAcceptances.find(acc => acc.traveller_id === rejectedId)?.request?.id,
+          message: "This parcel has been assigned to another traveller",
+          status: "NOT_SELECTED"
+        });
+        console.log(`[WebSocket] Emitted request_not_selected to traveller_requests_${rejectedId}`);
+      }
     }
 
     // Notify selected traveller
