@@ -6,6 +6,9 @@ import TravellerProfile from "../traveller/travellerProfile.model.js";
 import twilioService from "../../services/twilio.service.js";
 import otpConfig from "../../config/otp.config.js";
 import app from "../../app.js";
+import ParcelTracking from "../tracking/parcelTracking.model.js";
+import TravellerTrip from "../traveller/travellerTrip.model.js";
+import TravellerRoute from "../traveller/travellerRoute.model.js";
 
 
 class BookingService {
@@ -30,19 +33,27 @@ class BookingService {
           model: Parcel,
           as: "parcel",
           include: [
+            { model: Address, as: "pickupAddress",  foreignKey: "pickup_address_id" },
+            { model: Address, as: "deliveryAddress", foreignKey: "delivery_address_id" },
+            { model: User, as: "user" },
+          ],
+        },
+        {
+          model: TravellerTrip,
+          as: "traveller_trip",
+          include: [
             {
-              model: Address,
-              as: "pickupAddress",
-              foreignKey: "pickup_address_id",
-            },
-            {
-              model: Address,
-              as: "deliveryAddress",
-              foreignKey: "delivery_address_id",
-            },
-            {
-              model: User,
-              as: "user",
+              model: TravellerProfile,
+              foreignKey: "traveller_id",   // TravellerTrip.traveller_id → TravellerProfile.user_id
+              include: [
+                {
+                  model: TravellerRoute,
+                  as: "routes",
+                  where: { status: "ACTIVE" },
+                  required: false,          // don't fail if no active route
+                  limit: 1,
+                },
+              ],
             },
           ],
         },
@@ -219,6 +230,41 @@ class BookingService {
     }
     
     await booking.update(updateData);
+
+    // ✅ Create ParcelTracking row after OTP verified
+    try {
+      const pickupAddress   = booking.parcel.pickupAddress;
+      const deliveryAddress = booking.parcel.deliveryAddress;
+
+      // Get vehicle_type from the traveller's active route
+      const activeRoute = booking.traveller_trip
+        ?.TravellerProfile                // Sequelize uses model name as key if no alias set
+        ?.routes?.[0];
+
+      const vehicleType = activeRoute?.vehicle_type ?? "bike"; // fallback to bike
+
+      const missingCoords =
+        !pickupAddress?.latitude  || !pickupAddress?.longitude ||
+        !deliveryAddress?.latitude || !deliveryAddress?.longitude;
+
+      if (missingCoords) {
+        console.warn("[Tracking] Missing coordinates on addresses — skipping ParcelTracking creation");
+      } else {
+        await ParcelTracking.create({
+          booking_id:   booking.id,
+          vehicle_type: vehicleType,
+          pickup_lat:   pickupAddress.latitude,
+          pickup_lng:   pickupAddress.longitude,
+          delivery_lat: deliveryAddress.latitude,
+          delivery_lng: deliveryAddress.longitude,
+          status:       "in_transit",     // matches your ENUM: initiated|picked_up|in_transit|delivered|failed
+        });
+        console.log(`[Tracking] ParcelTracking created for booking ${booking.id}, vehicle: ${vehicleType}`);
+      }
+    } catch (trackingError) {
+      console.error("[Tracking] Failed to create ParcelTracking:", trackingError.message);
+      // ⚠️ Intentionally not re-throwing — OTP verification already succeeded
+    }
 
     // Emit WebSocket event to sender AND traveller
     const senderId = booking.parcel.user_id;
