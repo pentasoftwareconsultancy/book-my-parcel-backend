@@ -40,4 +40,19 @@ export const BOOKING_TRANSITIONS = {
 
 // for role confirmation
 
+export const PAYMENT_STATUS = {
+  CREATED: "CREATED",     // Order created
+  PENDING: "PENDING",     // Waiting payment
+  SUCCESS: "SUCCESS",     // Paid successfully
+  FAILED: "FAILED",       // Payment failed
+  REFUNDED: "REFUNDED"    // Optional future use
+};
 
+/* Allowed transitions */
+export const PAYMENT_TRANSITIONS = {
+  CREATED: ["PENDING", "FAILED"],
+  PENDING: ["SUCCESS", "FAILED"],
+  SUCCESS: ["REFUNDED"],
+  FAILED: [],
+  REFUNDED: []
+};

@@ -7,6 +7,7 @@ import twilioService from "../../services/twilio.service.js";
 import otpConfig from "../../config/otp.config.js";
 import app from "../../app.js";
 
+
 class BookingService {
   // Get io instance
   getIO() {

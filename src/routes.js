@@ -7,6 +7,7 @@ import travellerRoutes from "./modules/traveller/traveller.routes.js";
 import travellerRouteRoutes from "./modules/traveller/travellerRoute.routes.js";
 import placesRoutes from "./modules/places/places.routes.js";
 import matchingRoutes from "./modules/matching/matching.routes.js";
+import ParcelTracking from "./modules/tracking/parcelTracking.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
 
 const router = express.Router();
@@ -16,6 +17,9 @@ router.use("/auth", authRoutes); // /api/auth/...
 router.use("/user", userRoutes); // /api/user/...
 router.use("/places", placesRoutes); // /api/places/autocomplete
 
+router.use("/tracking", ParcelTracking); // /api/tracking/...
+
+//Travller Routes
 // Booking routes (OTP verification for pickup/delivery)
 router.use("/booking", bookingRoutes); // /api/booking/:id/start-pickup, verify-pickup, start-delivery, verify-delivery
 
