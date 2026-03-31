@@ -1,8 +1,15 @@
 import { expireOldRequests } from "../services/matchingEngine.service.js";
 
 export function setupSocketHandlers(io) {
+  console.log("✅ Socket.IO server initialized");
+  
   io.on("connection", (socket) => {
-    console.log(`[Socket] User connected: ${socket.id}`);
+    console.log(`[Socket] Client connected: ${socket.id}`);
+    
+    // Log ALL events for debugging
+    socket.onAny((eventName, ...args) => {
+      console.log(`[Socket] Event received: ${eventName}`, args);
+    });
 
     // ─── Heartbeat/Keepalive ──────────────────────────────────────────────
     socket.on("ping", () => {
@@ -14,6 +21,10 @@ export function setupSocketHandlers(io) {
       const room = `user_${userId}`;
       socket.join(room);
       console.log(`[Socket] User ${socket.id} joined room ${room}`);
+      
+      // Log all members in the room for debugging
+      const clients = io.sockets.adapter.rooms.get(room);
+      console.log(`[Socket] Room ${room} now has ${clients?.size || 0} member(s)`);
     });
 
     // ─── Leave user room ──────────────────────────────────────────────────
@@ -51,9 +62,34 @@ export function setupSocketHandlers(io) {
       console.log(`[Socket] Traveller ${socket.id} left room ${room}`);
     });
 
+    // ─── Join booking room (for tracking) ──────────────────────────────────
+    socket.on("join-booking", (bookingId) => {
+      console.log("[Socket] JOIN-BOOKING event received:", bookingId);
+      const room = `booking_${bookingId}`;
+      socket.join(room);
+      console.log(`[Socket] User ${socket.id} joined booking room ${room}`);
+      
+      // Log room members for debugging
+      const clients = io.sockets.adapter.rooms.get(room);
+      console.log(`[Socket] Room ${room} members:`, clients);
+    });
+
+    // ─── Traveller sending location ────────────────────────────────────────
+    socket.on("traveller-location", ({ bookingId, lat, lng }) => {
+      console.log("[Socket] LOCATION RECEIVED:", bookingId, lat, lng);
+      const room = `booking_${bookingId}`;
+      
+      io.to(room).emit("location-update", {
+        lat,
+        lng,
+        timestamp: Date.now(),
+      });
+      console.log(`[Socket] 📡 Location emitted to room: ${room}`);
+    });
+
     // ─── Disconnect ────────────────────────────────────────────────────────
     socket.on("disconnect", () => {
-      console.log(`[Socket] User disconnected: ${socket.id}`);
+      console.log(`[Socket] Client disconnected: ${socket.id}`);
     });
   });
 

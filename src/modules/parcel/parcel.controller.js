@@ -114,7 +114,7 @@ export const updateParcelStep = async (req, res) => {
 
     // Import the service function
     const { updateParcelStep: updateStep } = await import("./parcel.service.js");
-    const updatedParcel = await updateStep(id, stepData);
+    const updatedParcel = await updateStep(id, stepData, req); // Pass req for WebSocket access
 
     return responseSuccess(
       res,

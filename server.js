@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 dotenv.config();
-import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import initDatabase from "./src/config/db.init.js";
@@ -10,11 +9,6 @@ import app from "./src/app.js";
 import { seedRoles } from "./src/utils/seedRoles.js";
 import { createDefaultAdmin } from "./src/utils/createDefaultAdmin.js";
 import { setupSocketHandlers } from "./src/utils/socketHandlers.js";
-
-app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:5173/api"],
-  credentials: true
-}));
 
 const startServer = async () => {
   try {

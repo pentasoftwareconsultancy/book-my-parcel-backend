@@ -513,6 +513,12 @@ export async function getAcceptances(req, res) {
 
 // ─── POST /api/parcel/:id/select-traveller ─────────────────────────────────
 export async function selectTraveller(req, res) {
+  console.log('🎯 selectTraveller called with:', {
+    parcelId: req.params.id,
+    body: req.body,
+    userId: req.user.id
+  });
+
   const t = await sequelize.transaction();
 
   try {
@@ -538,7 +544,7 @@ export async function selectTraveller(req, res) {
     }
 
     // Verify parcel is still available
-    if (!["CREATED", "MATCHING"].includes(parcel.status)) {
+    if (!["CREATED", "MATCHING", "PARTNER_SELECTED"].includes(parcel.status)) {
       await t.rollback();
       return responseError(res, `Parcel is already ${parcel.status.toLowerCase()}`, 400);
     }
@@ -575,47 +581,20 @@ export async function selectTraveller(req, res) {
       return responseError(res, "Traveller profile not found", 404);
     }
 
-    // Update parcel
+    // Update parcel with selection (but don't create booking yet)
     const finalPrice = acceptance_price || parcel.price_quote;
     await parcel.update(
       {
-        status: "CONFIRMED",
+        status: "PARTNER_SELECTED", // New status to indicate selection but not confirmed
         selected_partner_id: traveller_id,
+        selected_acceptance_id: acceptance.id,
         price_quote: finalPrice,
+        form_step: 2, // Move to step 2
       },
       { transaction: t }
     );
 
-    // Create or update booking
-    let booking = await Booking.findOne(
-      { where: { parcel_id: parcelId } },
-      { transaction: t }
-    );
-
-    if (!booking) {
-      // Create booking WITHOUT booking_ref and tracking_ref
-      // These will be generated later:
-      // - booking_ref: when Step 3 (payment) is completed
-      // - tracking_ref: when status changes to IN_TRANSIT
-      booking = await Booking.create(
-        {
-          parcel_id: parcelId,
-          traveller_id,
-          status: "CONFIRMED",
-          booking_ref: null,    // Will be generated in Step 3
-          tracking_ref: null,   // Will be generated when IN_TRANSIT
-        },
-        { transaction: t }
-      );
-    } else {
-      await booking.update(
-        {
-          traveller_id,
-          status: "CONFIRMED",
-        },
-        { transaction: t }
-      );
-    }
+    // NOTE: Booking will be created later in Step 3 when payment is confirmed
 
     // Update selected traveller's request status to SELECTED
     await acceptance.request.update(
@@ -664,25 +643,33 @@ export async function selectTraveller(req, res) {
     if (req.app.get("io")) {
       const io = req.app.get("io");
       
-      // Emit to parcel room
+      console.log('🔌 Emitting WebSocket events for traveller selection (not booking yet):', {
+        parcelId,
+        travellerId: traveller_id,
+        parcelRoom: `parcel_${parcelId}`,
+        travellerRoom: `traveller_requests_${traveller_id}`
+      });
+      
+      // Emit to parcel room (for parcel owner)
       io.to(`parcel_${parcelId}`).emit("parcel_selected", {
         parcel_id: parcelId,
-        parcel_ref: parcel.parcel_ref, // Add parcel_ref for better matching
+        parcel_uuid: parcelId,
+        parcel_ref: parcel.parcel_ref,
         traveller_id,
-        booking_id: booking.id,
-        booking_ref: booking.booking_ref,
         final_price: finalPrice,
+        status: "PARTNER_SELECTED", // Indicate selection but not booking yet
       });
+      console.log(`🔌 Emitted parcel_selected to room parcel_${parcelId}`);
 
-      // Emit specific notification to selected traveller
-      io.to(`traveller_requests_${traveller_id}`).emit("traveller_selected", {
+      // Emit specific notification to selected traveller (selection notification, not booking)
+      const travellerSelectedData = {
         parcel_id: parcelId,
-        parcel_ref: parcel.parcel_ref, // Add parcel_ref for better matching
-        request_id: acceptance.request.id, // Add request_id for better filtering
-        booking_id: booking.id,
-        booking_ref: booking.booking_ref,
+        parcel_uuid: parcelId,
+        parcel_ref: parcel.parcel_ref,
+        request_id: acceptance.request.id,
         final_price: finalPrice,
-        message: "Congratulations! You've been selected for this parcel delivery!",
+        status: "SELECTED", // Status for the traveller
+        message: "You have been selected! Waiting for payment confirmation...",
         parcel_details: {
           pickup_address: parcel.pickupAddress,
           delivery_address: parcel.deliveryAddress,
@@ -693,13 +680,19 @@ export async function selectTraveller(req, res) {
           price: finalPrice,
           pickup_date: parcel.pickup_date,
         }
-      });
+      };
+      
+      io.to(`traveller_requests_${traveller_id}`).emit("traveller_selected", travellerSelectedData);
+      console.log(`🔌 Emitted traveller_selected to room traveller_requests_${traveller_id}`, travellerSelectedData);
 
       // Emit rejection notifications to all other travellers
       for (const rejectedId of rejectedTravellerIds) {
+        const rejectedRequest = otherAcceptances.find(acc => acc.traveller_id === rejectedId)?.request;
         io.to(`traveller_requests_${rejectedId}`).emit("request_not_selected", {
           parcel_id: parcelId,
-          request_id: otherAcceptances.find(acc => acc.traveller_id === rejectedId)?.request?.id,
+          parcel_uuid: parcelId, // Add explicit UUID for matching
+          parcel_ref: parcel.parcel_ref, // Add parcel_ref for better matching
+          request_id: rejectedRequest?.id,
           message: "This parcel has been assigned to another traveller",
           status: "NOT_SELECTED"
         });
@@ -707,25 +700,23 @@ export async function selectTraveller(req, res) {
       }
     }
 
-    // Notify selected traveller
+    // Notify selected traveller (selection only, not booking confirmation)
     await sendToTraveller(
       traveller_id,
-      "Congratulations! You've Been Selected",
-      "You have been selected to deliver this parcel. Booking is now confirmed!",
+      "You've Been Selected!",
+      "You have been selected for this parcel. We'll notify you once the booking is confirmed after payment.",
       {
         parcel_id: parcelId,
-        booking_id: booking.id,
-        type: "parcel_selected_for_delivery",
+        type: "parcel_selected_pending_payment",
       }
     );
 
     return responseSuccess(res, {
-      booking_id: booking.id,
-      booking_ref: booking.booking_ref,
       parcel_id: parcelId,
       traveller_id,
       final_price: finalPrice,
-      status: "CONFIRMED",
+      status: "PARTNER_SELECTED",
+      message: "Traveller selected successfully. Booking will be created after payment confirmation."
     }, "Traveller selected successfully");
   } catch (error) {
     await t.rollback();

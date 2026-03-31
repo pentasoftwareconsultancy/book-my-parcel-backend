@@ -1,28 +1,9 @@
 import express from "express";
 import routes from "./routes.js";
-import http from "http";
-import { Server } from "socket.io";
 import cors from "cors";
-import trackingSocket from "./socket/trackingSocket.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
-const server = http.createServer(app);
-
-export const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  },
-});
-
-io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
-  trackingSocket(io, socket);
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-  });
-});
 
 /* ✅ CORS configuration */
 const allowedOrigins = [
