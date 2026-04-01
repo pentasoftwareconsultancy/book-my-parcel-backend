@@ -39,9 +39,8 @@ export const createParcel = async (req, res) => {
     // Return the parcel ID and booking ID to frontend
     return responseSuccess(res, {
       id: result.parcel.id,
-      // bookingId: result.booking.id,
       parcel: result.parcel,
-      booking: result.booking,
+      suggestedPrice: result.suggestedPrice,
       pickupAddress: result.pickupAddress,
       deliveryAddress: result.deliveryAddress
     }, "Parcel request created successfully");

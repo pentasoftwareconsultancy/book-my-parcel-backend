@@ -97,6 +97,7 @@ export async function fetchTravellerDeliveries(travellerUserId, query) {
 
     return {
       id:         booking.id,
+      parcelId:   parcel?.id,  // ✅ Add parcel ID for frontend navigation
       bookingId:  booking.booking_ref || booking.bookingRef || `TEMP-${booking.id.substring(0, 8).toUpperCase()}`,
       trackingId: booking.tracking_ref || booking.trackingRef || `TEMP-${booking.id.substring(0, 12).toUpperCase()}`,
       status:     booking.status,

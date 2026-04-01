@@ -20,6 +20,7 @@ import {
   extractHierarchy,
   extractIntermediateCities,
 } from "../../services/googleMaps.service.js";
+import { calculatePrice } from "../../services/priceCalculation.service.js";
 
 const weightMap = { small: 1, medium: 5, large: 10, extra_large: 20 };
 
@@ -214,6 +215,7 @@ export async function createParcelRequest(data, files) {
   let routeDuration    = null;
   let intermediateCities = null;
   let routeGeometry    = null;
+  let suggestedPrice   = null;
 
   if (
     pickupEnriched.latitude && pickupEnriched.longitude &&
@@ -237,6 +239,20 @@ export async function createParcelRequest(data, files) {
         const steps = route.legs?.[0]?.steps || [];
         intermediateCities = extractIntermediateCities(steps);
         // route_distance_km is the source of truth for short/long classification in Phase 2
+        
+        // ── Calculate estimated price based on distance, weight, and dimensions ──
+        try {
+          suggestedPrice = calculatePrice(
+            routeDistance, 
+            data.weight || 1,
+            data.length,    // Length in cm
+            data.width,     // Width in cm
+            data.height     // Height in cm
+          );
+          console.log(`[Price] Calculated suggested price: ₹${suggestedPrice} (distance: ${routeDistance}km, weight: ${data.weight}kg, dimensions: ${data.length}×${data.width}×${data.height}cm)`);
+        } catch (priceError) {
+          console.warn(`[Price] Failed to calculate price: ${priceError.message}`);
+        }
       }
     } catch (error) {
       console.error("[GoogleMaps] Route calculation failed:", error.message);
@@ -273,7 +289,8 @@ export async function createParcelRequest(data, files) {
           pickup_address_id:     pickupAddress.id,
           delivery_address_id:   deliveryAddress.id,
           selected_partner_id:   data.selected_partner_id || null,
-          price_quote:           data.price_quote || null,
+          // Use calculated suggestedPrice as the final price_quote
+          price_quote:           suggestedPrice || data.price_quote || null,
           route_distance_km:     routeDistance,
           route_duration_minutes: routeDuration,
           intermediate_cities:   intermediateCities,
@@ -284,7 +301,7 @@ export async function createParcelRequest(data, files) {
       );
 
       await t.commit();
-      return { parcel, pickupAddress, deliveryAddress };
+      return { parcel, pickupAddress, deliveryAddress, suggestedPrice };
     } catch (error) {
       await t.rollback();
       
@@ -347,8 +364,10 @@ export async function getUserParcelRequests(userId) {
 
 export async function getParcelById(parcelId) {
   try {
-    const parcel = await Parcel.findOne({
-      where: { id: parcelId },
+    // Accept both database ID and parcel reference (e.g., BMP-002)
+    // First try parcel_ref (most common case when navigating from UI)
+    let parcel = await Parcel.findOne({
+      where: { parcel_ref: parcelId },
       include: [
         { model: Address, as: "pickupAddress" },
         { model: Address, as: "deliveryAddress" },
@@ -381,6 +400,45 @@ export async function getParcelById(parcelId) {
         },
       ],
     });
+
+    // Fallback to database ID if parcel_ref didn't match
+    if (!parcel) {
+      parcel = await Parcel.findOne({
+        where: { id: parcelId },
+        include: [
+          { model: Address, as: "pickupAddress" },
+          { model: Address, as: "deliveryAddress" },
+          { 
+            model: Booking, 
+            as: "booking",
+            required: false, // Make booking optional
+            include: [
+              {
+                model: User,
+                as: "traveller",
+                required: false, // Make traveller optional
+                attributes: ["id", "email", "phone_number"],
+                include: [
+                  {
+                    model: UserProfile,
+                    as: "profile",
+                    required: false,
+                    attributes: ["name"]
+                  },
+                  {
+                    model: TravellerProfile,
+                    as: "travellerProfile",
+                    required: false, // Make profile optional
+                    attributes: ["rating", "total_deliveries", "vehicle_type", "vehicle_number"]
+                  }
+                ]
+              }
+            ]
+          },
+        ],
+      });
+    }
+
     return parcel;
   } catch (error) {
     console.error(`[getParcelById] Error fetching parcel ${parcelId}:`, error.message);
