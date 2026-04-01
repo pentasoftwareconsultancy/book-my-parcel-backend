@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 dotenv.config();
-
 import { createServer } from "http";
 import { Server } from "socket.io";
 import initDatabase from "./src/config/db.init.js";
@@ -10,13 +9,6 @@ import app from "./src/app.js";
 import { seedRoles } from "./src/utils/seedRoles.js";
 import { createDefaultAdmin } from "./src/utils/createDefaultAdmin.js";
 import { setupSocketHandlers } from "./src/utils/socketHandlers.js";
-
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5173",
-  "https://book-my-parcel-frontend.vercel.app",
-];
 
 const startServer = async () => {
   try {
@@ -34,11 +26,6 @@ const startServer = async () => {
     const server = createServer(app);
 
     const io = new Server(server, {
-      cors: {
-        origin: ALLOWED_ORIGINS,
-        methods: ["GET", "POST"],
-        credentials: true,
-      },
       pingTimeout: 120000,
       pingInterval: 30000,
       connectTimeout: 60000,

@@ -55,6 +55,7 @@ const Parcel = sequelize.define(
       type: DataTypes.ENUM(
         "CREATED",
         "MATCHING",
+        "PARTNER_SELECTED",
         "CONFIRMED",
         "PICKUP",
         "IN_TRANSIT",

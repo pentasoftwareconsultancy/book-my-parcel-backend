@@ -26,7 +26,9 @@ class BookingService {
 
   // Get booking with all related data
   async getBookingWithDetails(bookingId) {
-    return await Booking.findOne({
+    console.log(`🔍 [DEBUG] getBookingWithDetails called with bookingId: ${bookingId}`);
+    
+    const booking = await Booking.findOne({
       where: { id: bookingId },
       include: [
         {
@@ -59,22 +61,57 @@ class BookingService {
         },
       ],
     });
+    
+    console.log(`🔍 [DEBUG] Booking query result:`, booking ? 'FOUND' : 'NOT FOUND');
+    if (booking) {
+      console.log(`🔍 [DEBUG] Found booking:`, {
+        id: booking.id,
+        status: booking.status,
+        traveller_id: booking.traveller_id,
+        parcel_id: booking.parcel_id,
+        hasParcel: !!booking.parcel,
+        hasPickupAddress: !!booking.parcel?.pickupAddress
+      });
+    }
+    
+    return booking;
   }
 
   // Start pickup process
   async startPickup(bookingId, travellerId) {
+    console.log(`🔍 [DEBUG] startPickup called with:`, { bookingId, travellerId });
+    
     const booking = await this.getBookingWithDetails(bookingId);
+    console.log(`🔍 [DEBUG] Booking found:`, booking ? 'YES' : 'NO');
+    
+    if (booking) {
+      console.log(`🔍 [DEBUG] Booking details:`, {
+        id: booking.id,
+        status: booking.status,
+        traveller_id: booking.traveller_id,
+        parcel_id: booking.parcel_id
+      });
+    }
 
     if (!booking) {
+      console.error(`❌ [DEBUG] Booking not found for ID: ${bookingId}`);
       throw new Error("Booking not found");
     }
 
     if (booking.traveller_id !== travellerId) {
+      console.error(`❌ [DEBUG] Unauthorized access:`, {
+        booking_traveller_id: booking.traveller_id,
+        request_traveller_id: travellerId
+      });
       throw new Error("Unauthorized: You don't own this booking");
     }
 
     // Allow CONFIRMED or PICKUP status (for resend)
     if (!["CONFIRMED", "PICKUP"].includes(booking.status)) {
+      console.error(`❌ [DEBUG] Invalid status:`, {
+        current_status: booking.status,
+        expected: ["CONFIRMED", "PICKUP"]
+      });
       throw new Error(`Invalid status: Expected CONFIRMED or PICKUP, got ${booking.status}`);
     }
 
@@ -141,13 +178,23 @@ class BookingService {
         message: "Traveller has arrived at pickup location",
       };
       
+      // Log room information for debugging
+      const senderRoom = `user_${senderId}`;
+      const travellerRoom = `user_${travellerId}`;
+      const senderClients = io.sockets.adapter.rooms.get(senderRoom);
+      const travellerClients = io.sockets.adapter.rooms.get(travellerRoom);
+      
+      console.log(`[WebSocket] Attempting to emit pickup_otp_generated:`);
+      console.log(`  - Sender room: ${senderRoom} (${senderClients?.size || 0} clients)`);
+      console.log(`  - Traveller room: ${travellerRoom} (${travellerClients?.size || 0} clients)`);
+      
       // Emit to sender (user who created the parcel)
-      io.to(`user_${senderId}`).emit("pickup_otp_generated", eventData);
-      console.log(`[WebSocket] Emitted pickup_otp_generated to user_${senderId}`);
+      io.to(senderRoom).emit("pickup_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted pickup_otp_generated to ${senderRoom}`);
       
       // Emit to traveller
-      io.to(`user_${travellerId}`).emit("pickup_otp_generated", eventData);
-      console.log(`[WebSocket] Emitted pickup_otp_generated to user_${travellerId}`);
+      io.to(travellerRoom).emit("pickup_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted pickup_otp_generated to ${travellerRoom}`);
     }
 
     return {
@@ -276,13 +323,23 @@ class BookingService {
         pickup_verified_at: booking.pickup_verified_at,
       };
       
+      // Log room information for debugging
+      const senderRoom = `user_${senderId}`;
+      const travellerRoom = `user_${travellerId}`;
+      const senderClients = io.sockets.adapter.rooms.get(senderRoom);
+      const travellerClients = io.sockets.adapter.rooms.get(travellerRoom);
+      
+      console.log(`[WebSocket] Attempting to emit pickup_verified:`);
+      console.log(`  - Sender room: ${senderRoom} (${senderClients?.size || 0} clients)`);
+      console.log(`  - Traveller room: ${travellerRoom} (${travellerClients?.size || 0} clients)`);
+      
       // Emit to sender (user who created the parcel)
-      io.to(`user_${senderId}`).emit("pickup_verified", eventData);
-      console.log(`[WebSocket] Emitted pickup_verified to user_${senderId}`);
+      io.to(senderRoom).emit("pickup_verified", eventData);
+      console.log(`[WebSocket] Emitted pickup_verified to ${senderRoom}`);
       
       // Emit to traveller
-      io.to(`user_${travellerId}`).emit("pickup_verified", eventData);
-      console.log(`[WebSocket] Emitted pickup_verified to user_${travellerId}`);
+      io.to(travellerRoom).emit("pickup_verified", eventData);
+      console.log(`[WebSocket] Emitted pickup_verified to ${travellerRoom}`);
     }
 
     return {
@@ -371,13 +428,23 @@ class BookingService {
         message: "Traveller has arrived at delivery location",
       };
       
+      // Log room information for debugging
+      const senderRoom = `user_${senderId}`;
+      const travellerRoom = `user_${travellerId}`;
+      const senderClients = io.sockets.adapter.rooms.get(senderRoom);
+      const travellerClients = io.sockets.adapter.rooms.get(travellerRoom);
+      
+      console.log(`[WebSocket] Attempting to emit delivery_otp_generated:`);
+      console.log(`  - Sender room: ${senderRoom} (${senderClients?.size || 0} clients)`);
+      console.log(`  - Traveller room: ${travellerRoom} (${travellerClients?.size || 0} clients)`);
+      
       // Emit to sender (user who created the parcel)
-      io.to(`user_${senderId}`).emit("delivery_otp_generated", eventData);
-      console.log(`[WebSocket] Emitted delivery_otp_generated to user_${senderId}`);
+      io.to(senderRoom).emit("delivery_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted delivery_otp_generated to ${senderRoom}`);
       
       // Emit to traveller
-      io.to(`user_${travellerId}`).emit("delivery_otp_generated", eventData);
-      console.log(`[WebSocket] Emitted delivery_otp_generated to user_${travellerId}`);
+      io.to(travellerRoom).emit("delivery_otp_generated", eventData);
+      console.log(`[WebSocket] Emitted delivery_otp_generated to ${travellerRoom}`);
     }
 
     return {
@@ -486,13 +553,23 @@ class BookingService {
         delivered_at: booking.delivered_at,
       };
       
+      // Log room information for debugging
+      const senderRoom = `user_${senderId}`;
+      const travellerRoom = `user_${travellerId}`;
+      const senderClients = io.sockets.adapter.rooms.get(senderRoom);
+      const travellerClients = io.sockets.adapter.rooms.get(travellerRoom);
+      
+      console.log(`[WebSocket] Attempting to emit delivery_verified:`);
+      console.log(`  - Sender room: ${senderRoom} (${senderClients?.size || 0} clients)`);
+      console.log(`  - Traveller room: ${travellerRoom} (${travellerClients?.size || 0} clients)`);
+      
       // Emit to sender (user who created the parcel)
-      io.to(`user_${senderId}`).emit("delivery_verified", eventData);
-      console.log(`[WebSocket] Emitted delivery_verified to user_${senderId}`);
+      io.to(senderRoom).emit("delivery_verified", eventData);
+      console.log(`[WebSocket] Emitted delivery_verified to ${senderRoom}`);
       
       // Emit to traveller
-      io.to(`user_${travellerId}`).emit("delivery_verified", eventData);
-      console.log(`[WebSocket] Emitted delivery_verified to user_${travellerId}`);
+      io.to(travellerRoom).emit("delivery_verified", eventData);
+      console.log(`[WebSocket] Emitted delivery_verified to ${travellerRoom}`);
     }
 
     return {

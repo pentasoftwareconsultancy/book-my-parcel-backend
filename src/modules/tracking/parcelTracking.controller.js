@@ -5,8 +5,6 @@ import {
   completeDelivery,
 } from "./parcelTracking.service.js";
 
-// ✅ No more import from socket.config.js
-
 export async function handleInitiateTracking(req, res) {
   try {
     const { booking_id, vehicle_type } = req.body;
@@ -15,18 +13,21 @@ export async function handleInitiateTracking(req, res) {
 
     const tracking = await initiateTracking(booking_id, vehicle_type);
 
+    // Get io instance from app
     const io = req.app.get("io");
-    io.to(`booking_${booking_id}`).emit("tracking_initiated", {
-      booking_id,
-      status:           tracking.status,
-      encoded_polyline: tracking.encoded_polyline,
-      distance_meters:  tracking.distance_meters,
-      duration_seconds: tracking.duration_seconds,
-      pickup_lat:       tracking.pickup_lat,
-      pickup_lng:       tracking.pickup_lng,
-      delivery_lat:     tracking.delivery_lat,
-      delivery_lng:     tracking.delivery_lng,
-    });
+    if (io) {
+      io.to(booking_id).emit("tracking_initiated", {
+        booking_id,
+        status:           tracking.status,
+        encoded_polyline: tracking.encoded_polyline,
+        distance_meters:  tracking.distance_meters,
+        duration_seconds: tracking.duration_seconds,
+        pickup_lat:       tracking.pickup_lat,
+        pickup_lng:       tracking.pickup_lng,
+        delivery_lat:     tracking.delivery_lat,
+        delivery_lng:     tracking.delivery_lng,
+      });
+    }
 
     return res.status(201).json({ message: "Tracking initiated", tracking });
   } catch (err) {
@@ -43,15 +44,18 @@ export async function handleUpdateLocation(req, res) {
 
     const tracking = await updateTravellerLocation(booking_id, { lat, lng, speed, heading });
 
+    // Get io instance from app
     const io = req.app.get("io");
-    io.to(`booking_${booking_id}`).emit("location_updated", {
-      booking_id,
-      traveller_lat: tracking.traveller_lat,
-      traveller_lng: tracking.traveller_lng,
-      speed:         tracking.speed,
-      heading:       tracking.heading,
-      status:        tracking.status,
-    });
+    if (io) {
+      io.to(booking_id).emit("location_updated", {
+        booking_id,
+        traveller_lat: tracking.traveller_lat,
+        traveller_lng: tracking.traveller_lng,
+        speed:         tracking.speed,
+        heading:       tracking.heading,
+        status:        tracking.status,
+      });
+    }
 
     return res.status(200).json({ message: "Location updated", tracking });
   } catch (err) {
@@ -79,11 +83,14 @@ export async function handleCompleteDelivery(req, res) {
 
     const tracking = await completeDelivery(booking_id);
 
+    // Get io instance from app
     const io = req.app.get("io");
-    io.to(`booking_${booking_id}`).emit("delivery_completed", {
-      booking_id,
-      status: tracking.status,
-    });
+    if (io) {
+      io.to(booking_id).emit("delivery_completed", {
+        booking_id,
+        status: tracking.status,
+      });
+    }
 
     return res.status(200).json({ message: "Delivery completed", tracking });
   } catch (err) {

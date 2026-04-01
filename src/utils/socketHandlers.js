@@ -1,8 +1,15 @@
 import { expireOldRequests } from "../services/matchingEngine.service.js";
 
 export function setupSocketHandlers(io) {
+  console.log("✅ Socket.IO server initialized");
+  
   io.on("connection", (socket) => {
-    console.log(`[Socket] User connected: ${socket.id}`);
+    console.log(`[Socket] Client connected: ${socket.id}`);
+    
+    // Log ALL events for debugging
+    socket.onAny((eventName, ...args) => {
+      console.log(`[Socket] Event received: ${eventName}`, args);
+    });
 
     // ─── Heartbeat/Keepalive ──────────────────────────────────────────────
     socket.on("ping", () => {
@@ -15,9 +22,11 @@ export function setupSocketHandlers(io) {
       const room = `user_${userId}`;
       socket.join(room);
       console.log(`[Socket] User ${socket.id} joined room ${room}`);
+
+      // Log all members in the room for debugging
+      const clients = io.sockets.adapter.rooms.get(room);
+      console.log(`[Socket] Room ${room} now has ${clients?.size || 0} member(s)`);
     };
-    socket.on("join_user", joinUserRoom);
-    socket.on("join_user_room", joinUserRoom);
 
     // ─── Leave user room ──────────────────────────────────────────────────
     socket.on("leave_user", (userId) => {
@@ -79,7 +88,7 @@ export function setupSocketHandlers(io) {
 
     // ─── Disconnect ───────────────────────────────────────────────────────
     socket.on("disconnect", () => {
-      console.log(`[Socket] User disconnected: ${socket.id}`);
+      console.log(`[Socket] Client disconnected: ${socket.id}`);
     });
   });
 

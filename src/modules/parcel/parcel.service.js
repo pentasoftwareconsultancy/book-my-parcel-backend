@@ -391,11 +391,20 @@ export async function getParcelById(parcelId) {
 
 
 // ─── Update Parcel Form Step ──────────────────────────────────────────────────
-export async function updateParcelStep(parcelId, stepData) {
+export async function updateParcelStep(parcelId, stepData, req = null) {
+  const t = await sequelize.transaction();
+  
   try {
-    const parcel = await Parcel.findByPk(parcelId);
+    const parcel = await Parcel.findByPk(parcelId, {
+      include: [
+        { model: Address, as: "pickupAddress" },
+        { model: Address, as: "deliveryAddress" }
+      ],
+      transaction: t
+    });
     
     if (!parcel) {
+      await t.rollback();
       throw new Error('Parcel not found');
     }
 
@@ -416,14 +425,19 @@ export async function updateParcelStep(parcelId, stepData) {
       updateData.selected_partner_id = stepData.selected_partner_id;
     }
 
-    await parcel.update(updateData);
-    
     // ✅ NEW: Generate Booking ID when Step 3 is completed (payment)
+    let booking = null;
     if (stepData.form_step === 3) {
-      console.log(`[updateParcelStep] Step 3 completed - Creating booking with Booking ID`);
+      console.log(`[updateParcelStep] Step 3 completed - Creating booking and confirming traveller selection`);
+      
+      // Update parcel status to CONFIRMED when payment is done
+      updateData.status = "CONFIRMED";
       
       // Check if booking already exists
-      let booking = await Booking.findOne({ where: { parcel_id: parcelId } });
+      booking = await Booking.findOne({ 
+        where: { parcel_id: parcelId },
+        transaction: t 
+      });
       
       if (!booking && parcel.selected_partner_id) {
         // Generate Booking ID
@@ -437,22 +451,87 @@ export async function updateParcelStep(parcelId, stepData) {
           status: "CONFIRMED",
           booking_ref: bookingRef,
           tracking_ref: null, // Will be generated when IN_TRANSIT
-        });
+        }, { transaction: t });
         
         console.log(`[updateParcelStep] Booking created with ID: ${bookingRef}`);
       } else if (booking && !booking.booking_ref) {
         // Update existing booking with Booking ID
         const { generateBookingId } = await import("../../utils/idGenerator.js");
         const bookingRef = await generateBookingId();
-        await booking.update({ booking_ref: bookingRef });
+        await booking.update({ booking_ref: bookingRef }, { transaction: t });
         console.log(`[updateParcelStep] Booking updated with ID: ${bookingRef}`);
       }
+    }
+
+    await parcel.update(updateData, { transaction: t });
+    await t.commit();
+    
+    // ✅ NEW: Emit WebSocket events when Step 3 is completed (booking confirmed)
+    if (stepData.form_step === 3 && booking && parcel.selected_partner_id && req?.app?.get("io")) {
+      const io = req.app.get("io");
+      
+      console.log('🔌 Emitting WebSocket events for booking confirmation (Step 3):', {
+        parcelId,
+        bookingId: booking.id,
+        bookingRef: booking.booking_ref,
+        travellerId: parcel.selected_partner_id
+      });
+      
+      // Emit booking confirmation to selected traveller
+      const bookingConfirmedData = {
+        booking_id: booking.id,
+        booking_ref: booking.booking_ref,
+        parcel_id: parcelId,
+        parcel_uuid: parcelId,
+        parcel_ref: parcel.parcel_ref,
+        final_price: parcel.price_quote,
+        status: "CONFIRMED",
+        message: "Booking confirmed! Payment received.",
+        parcel_details: {
+          pickup_address: parcel.pickupAddress,
+          delivery_address: parcel.deliveryAddress,
+          pickup_city: parcel.pickupAddress?.city,
+          delivery_city: parcel.deliveryAddress?.city,
+          weight: parcel.weight,
+          size: parcel.package_size,
+          price: parcel.price_quote,
+          pickup_date: parcel.pickup_date,
+        }
+      };
+      
+      io.to(`traveller_requests_${parcel.selected_partner_id}`).emit("booking_confirmed", bookingConfirmedData);
+      console.log(`🔌 Emitted booking_confirmed to room traveller_requests_${parcel.selected_partner_id}`, bookingConfirmedData);
+      
+      // Emit to parcel room (for parcel owner)
+      io.to(`parcel_${parcelId}`).emit("parcel_booking_confirmed", {
+        parcel_id: parcelId,
+        booking_id: booking.id,
+        booking_ref: booking.booking_ref,
+        traveller_id: parcel.selected_partner_id,
+        status: "CONFIRMED",
+      });
+      console.log(`🔌 Emitted parcel_booking_confirmed to room parcel_${parcelId}`);
+      
+      // Send push notification to traveller
+      const { sendToTraveller } = await import("../../services/notification.service.js");
+      await sendToTraveller(
+        parcel.selected_partner_id,
+        "Booking Confirmed!",
+        `Your booking ${booking.booking_ref} has been confirmed. Payment received successfully.`,
+        {
+          parcel_id: parcelId,
+          booking_id: booking.id,
+          booking_ref: booking.booking_ref,
+          type: "booking_confirmed",
+        }
+      );
     }
     
     console.log(`[updateParcelStep] Updated parcel ${parcelId} to step ${stepData.form_step}`);
     
     return parcel;
   } catch (error) {
+    await t.rollback();
     console.error(`[updateParcelStep] Error updating parcel ${parcelId}:`, error.message);
     throw error;
   }
