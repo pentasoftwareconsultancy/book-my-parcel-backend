@@ -580,6 +580,88 @@ class BookingService {
       // earnings: 500, // TODO: Calculate from booking
     };
   }
+
+  // Traveller cancels booking
+  async cancelBooking(bookingId, travellerId, cancellationData = {}) {
+    const { reason = "other", details = "" } = cancellationData;
+    
+    const booking = await this.getBookingWithDetails(bookingId);
+
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
+
+    if (booking.traveller_id !== travellerId) {
+      throw new Error("Unauthorized: You don't own this booking");
+    }
+
+    // Check if booking can be cancelled
+    const cancellableStatuses = ["CONFIRMED", "PICKUP"];
+    if (!cancellableStatuses.includes(booking.status)) {
+      throw new Error(`Cannot cancel booking with status: ${booking.status}. Can only cancel CONFIRMED or PICKUP status.`);
+    }
+
+    // Update booking status to CANCELLED
+    await booking.update({
+      status: "CANCELLED",
+    });
+
+    // Update parcel status to CANCELLED
+    await booking.parcel.update({
+      status: "CANCELLED",
+    });
+
+    // Log cancellation
+    console.log(`📋 [Cancellation] Booking cancelled:`, {
+      booking_id: booking.id,
+      parcel_id: booking.parcel_id,
+      traveller_id: travellerId,
+      previous_status: booking.status,
+      new_status: "CANCELLED",
+      reason,
+      details,
+    });
+
+    // Emit WebSocket event to sender (user)
+    const senderId = booking.parcel.user_id;
+    const io = this.getIO();
+    if (io) {
+      const travellerProfile = await TravellerProfile.findOne({
+        where: { user_id: travellerId },
+        include: [{ model: User, as: "user" }],
+      });
+      const travellerName = travellerProfile?.user?.name || "Traveller";
+
+      const eventData = {
+        booking_id: booking.id,
+        parcel_id: booking.parcel_id,
+        status: "CANCELLED",
+        cancelled_by: "traveller",
+        traveller_name: travellerName,
+        reason,
+        cancelled_at: new Date(),
+      };
+
+      const senderRoom = `user_${senderId}`;
+      const travellerRoom = `user_${travellerId}`;
+      
+      io.to(senderRoom).emit("booking_cancelled", eventData);
+      console.log(`[WebSocket] Emitted booking_cancelled to sender ${senderRoom}`);
+      
+      // Notify traveller as well
+      io.to(travellerRoom).emit("booking_cancelled", eventData);
+      console.log(`[WebSocket] Emitted booking_cancelled to traveller ${travellerRoom}`);
+    }
+
+    return {
+      success: true,
+      booking_id: booking.id,
+      parcel_id: booking.parcel_id,
+      status: "CANCELLED",
+      message: "Booking cancelled successfully",
+      cancelled_at: new Date(),
+    };
+  }
 }
 
 export default new BookingService();

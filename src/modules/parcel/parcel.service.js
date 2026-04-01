@@ -8,6 +8,7 @@ import UserProfile from '../user/userProfile.model.js';
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
 import ParcelAcceptance from "../matching/parcelAcceptance.model.js";
+import app from "../../app.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
 import { BOOKING_STATUS, BOOKING_TRANSITIONS } from "../../utils/constants.js";
 import { generateParcelId } from "../../utils/idGenerator.js";
@@ -591,6 +592,94 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
   } catch (error) {
     await t.rollback();
     console.error(`[updateParcelStep] Error updating parcel ${parcelId}:`, error.message);
+    throw error;
+  }
+}
+
+// ─── Cancel Parcel (User cancels their own parcel) ─────────────────────────────
+export async function cancelParcelRequest(parcelId, userId, cancellationData = {}, req = null) {
+  const { reason = "other", details = "" } = cancellationData;
+  
+  try {
+    const parcel = await Parcel.findByPk(parcelId, {
+      include: [
+        { model: User, as: "user" },
+        { model: Booking, as: "booking" },
+      ],
+    });
+    
+    if (!parcel) {
+      throw new Error("Parcel not found");
+    }
+
+    if (parcel.user_id !== userId) {
+      throw new Error("Unauthorized: You don't own this parcel");
+    }
+
+    // Check if parcel can be cancelled
+    const cancellableStatuses = ["CREATED", "MATCHING", "PARTNER_SELECTED", "CONFIRMED"];
+    if (!cancellableStatuses.includes(parcel.status)) {
+      throw new Error(`Cannot cancel parcel with status: ${parcel.status}. Can only cancel CREATED, MATCHING, PARTNER_SELECTED, or CONFIRMED status.`);
+    }
+
+    // Update parcel status to CANCELLED
+    await parcel.update({ status: "CANCELLED" });
+
+    // If there's a booking with this parcel, cancel it too
+    const booking = parcel.booking;
+    if (booking && !["DELIVERED", "CANCELLED"].includes(booking.status)) {
+      await booking.update({ status: "CANCELLED" });
+    }
+
+    // Log cancellation
+    console.log(`📋 [Cancellation] Parcel cancelled:`, {
+      parcel_id: parcelId,
+      parcel_ref: parcel.parcel_ref,
+      user_id: userId,
+      previous_status: parcel.status,
+      new_status: "CANCELLED",
+      reason,
+      details,
+    });
+
+    // Emit WebSocket event to both user and traveller
+    const io = app.get("io");
+    
+    if (io) {
+      const cancelData = {
+        parcel_id: parcelId,
+        parcel_ref: parcel.parcel_ref,
+        booking_id: booking?.id,
+        booking_ref: booking?.booking_ref,
+        status: "CANCELLED",
+        cancelled_by: "user",
+        reason,
+        cancelled_at: new Date(),
+      };
+
+      // Emit to user's room so they see the parcel removed
+      const userRoom = `user_${userId}`;
+      io.to(userRoom).emit("parcel_cancelled", cancelData);
+      console.log(`[WebSocket] Emitted parcel_cancelled to user ${userRoom}`);
+
+      // Emit to traveller's room if booking exists
+      if (booking) {
+        const travellerRoom = `user_${booking.traveller_id}`;
+        io.to(travellerRoom).emit("booking_cancelled", cancelData);
+        console.log(`[WebSocket] Emitted booking_cancelled to traveller ${travellerRoom}`);
+      }
+    }
+
+    return {
+      success: true,
+      parcel_id: parcelId,
+      parcel_ref: parcel.parcel_ref,
+      status: "CANCELLED",
+      message: "Parcel cancelled successfully",
+      cancelled_at: new Date(),
+    };
+  } catch (error) {
+    console.error(`[cancelParcelRequest] Error cancelling parcel:`, error.message);
     throw error;
   }
 }

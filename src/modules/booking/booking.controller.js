@@ -89,6 +89,25 @@ class BookingController {
       return responseError(res, error.message, 400);
     }
   }
+
+  // POST /api/booking/:bookingId/cancel (Traveller cancels)
+  async cancelBooking(req, res) {
+    try {
+      const { bookingId } = req.params;
+      const { reason = "other", details = "" } = req.body;
+      const travellerId = req.user.id;
+
+      const result = await bookingService.cancelBooking(bookingId, travellerId, {
+        reason,
+        details,
+      });
+
+      return responseSuccess(res, result, "Booking cancelled successfully");
+    } catch (error) {
+      console.error("Error in cancelBooking:", error);
+      return responseError(res, error.message, 400);
+    }
+  }
 }
 
 export default new BookingController();

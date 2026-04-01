@@ -128,3 +128,25 @@ export const updateParcelStep = async (req, res) => {
     return responseError(res, error.message || "Failed to update parcel step");
   }
 };
+
+// Cancel parcel (User cancels their own parcel)
+export const cancelParcel = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const { reason = "other", details = "" } = req.body;
+
+    // Import the service function
+    const { cancelParcelRequest } = await import("./parcel.service.js");
+    const result = await cancelParcelRequest(id, userId, { reason, details }, req);
+
+    return responseSuccess(
+      res,
+      result,
+      "Parcel cancelled successfully"
+    );
+  } catch (error) {
+    console.error("Cancel parcel error:", error);
+    return responseError(res, error.message || "Failed to cancel parcel", 400);
+  }
+};
