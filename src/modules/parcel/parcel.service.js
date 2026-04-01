@@ -347,8 +347,10 @@ export async function getUserParcelRequests(userId) {
 
 export async function getParcelById(parcelId) {
   try {
-    const parcel = await Parcel.findOne({
-      where: { id: parcelId },
+    // Accept both database ID and parcel reference (e.g., BMP-002)
+    // First try parcel_ref (most common case when navigating from UI)
+    let parcel = await Parcel.findOne({
+      where: { parcel_ref: parcelId },
       include: [
         { model: Address, as: "pickupAddress" },
         { model: Address, as: "deliveryAddress" },
@@ -381,6 +383,45 @@ export async function getParcelById(parcelId) {
         },
       ],
     });
+
+    // Fallback to database ID if parcel_ref didn't match
+    if (!parcel) {
+      parcel = await Parcel.findOne({
+        where: { id: parcelId },
+        include: [
+          { model: Address, as: "pickupAddress" },
+          { model: Address, as: "deliveryAddress" },
+          { 
+            model: Booking, 
+            as: "booking",
+            required: false, // Make booking optional
+            include: [
+              {
+                model: User,
+                as: "traveller",
+                required: false, // Make traveller optional
+                attributes: ["id", "email", "phone_number"],
+                include: [
+                  {
+                    model: UserProfile,
+                    as: "profile",
+                    required: false,
+                    attributes: ["name"]
+                  },
+                  {
+                    model: TravellerProfile,
+                    as: "travellerProfile",
+                    required: false, // Make profile optional
+                    attributes: ["rating", "total_deliveries", "vehicle_type", "vehicle_number"]
+                  }
+                ]
+              }
+            ]
+          },
+        ],
+      });
+    }
+
     return parcel;
   } catch (error) {
     console.error(`[getParcelById] Error fetching parcel ${parcelId}:`, error.message);

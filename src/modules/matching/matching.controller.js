@@ -404,6 +404,26 @@ export async function getAcceptances(req, res) {
               model: TravellerProfile,
               as: "travellerProfile",
               attributes: ["id", "vehicle_type", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"],
+              include: [
+                {
+                  model: TravellerRoute,
+                  as: "routes",
+                  required: false,
+                  attributes: ["id", "departure_time", "arrival_time", "vehicle_number", "total_distance_km", "total_duration_minutes", "status"],
+                  include: [
+                    {
+                      model: Address,
+                      as: "originAddress",
+                      attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
+                    },
+                    {
+                      model: Address,
+                      as: "destAddress",
+                      attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
+                    }
+                  ]
+                }
+              ]
             },
           ],
         },
@@ -425,12 +445,28 @@ export async function getAcceptances(req, res) {
         capacity_kg: acc.traveller.travellerProfile?.capacity_kg || null,
         travellerProfile: acc.traveller.travellerProfile
       },
+      route: acc.traveller.travellerProfile?.routes?.find(r => r.status === "ACTIVE") || null,
       detour_km: acc.request.detour_km,
       detour_percentage: acc.request.detour_percentage,
       match_score: acc.request.match_score,
       acceptance_price: acc.acceptance_price,
       accepted_at: acc.accepted_at,
     }));
+
+    console.log('[Matching] Formatted acceptances:', JSON.stringify(formattedAcceptances.map(a => ({
+      traveller_id: a.traveller.id,
+      traveller_email: a.traveller.email,
+      has_route: !!a.route,
+      route_status: a.route?.status,
+      route_origin_city: a.route?.originAddress?.city,
+      route_dest_city: a.route?.destAddress?.city,
+      route_object_keys: a.route ? Object.keys(a.route) : null
+    })), null, 2));
+
+    // Also log the full route object for first acceptance if it exists
+    if (formattedAcceptances[0]?.route) {
+      console.log('[Matching] Full route object for first acceptance:', JSON.stringify(formattedAcceptances[0].route, null, 2));
+    }
 
     // Get pending requests if requested
     let pendingRequests = [];
@@ -450,6 +486,26 @@ export async function getAcceptances(req, res) {
                 model: TravellerProfile,
                 as: "travellerProfile",
                 attributes: ["id", "vehicle_type", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"],
+                include: [
+                  {
+                    model: TravellerRoute,
+                    as: "routes",
+                    required: false,
+                    attributes: ["id", "departure_time", "arrival_time", "vehicle_number", "total_distance_km", "total_duration_minutes", "status"],
+                    include: [
+                      {
+                        model: Address,
+                        as: "originAddress",
+                        attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
+                      },
+                      {
+                        model: Address,
+                        as: "destAddress",
+                        attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
+                      }
+                    ]
+                  }
+                ]
               },
             ],
           },
@@ -471,6 +527,7 @@ export async function getAcceptances(req, res) {
           capacity_kg: req.traveller.travellerProfile?.capacity_kg || null,
           travellerProfile: req.traveller.travellerProfile
         },
+        route: req.traveller.travellerProfile?.routes?.find(r => r.status === "ACTIVE") || null,
         detour_km: req.detour_km,
         detour_percentage: req.detour_percentage,
         match_score: req.match_score,
@@ -494,6 +551,22 @@ export async function getAcceptances(req, res) {
       pending_requests: pendingRequests,
       sort_by: sort,
       parcel_distance_km: parcel.route_distance_km,
+      pickup: {
+        city: parcel.pickupAddress?.city || "—",
+        address: parcel.pickupAddress?.address || "—",
+        state: parcel.pickupAddress?.state || "—",
+        pincode: parcel.pickupAddress?.pincode || "—",
+        latitude: parcel.pickupAddress?.latitude,
+        longitude: parcel.pickupAddress?.longitude
+      },
+      delivery: {
+        city: parcel.deliveryAddress?.city || "—",
+        address: parcel.deliveryAddress?.address || "—",
+        state: parcel.deliveryAddress?.state || "—",
+        pincode: parcel.deliveryAddress?.pincode || "—",
+        latitude: parcel.deliveryAddress?.latitude,
+        longitude: parcel.deliveryAddress?.longitude
+      },
       pickup_location: parcel.pickupAddress ? {
         lat: parseFloat(parcel.pickupAddress.latitude),
         lng: parseFloat(parcel.pickupAddress.longitude)
