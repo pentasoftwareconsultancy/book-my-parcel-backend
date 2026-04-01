@@ -20,6 +20,7 @@ import {
   extractHierarchy,
   extractIntermediateCities,
 } from "../../services/googleMaps.service.js";
+import { calculatePrice } from "../../services/priceCalculation.service.js";
 
 const weightMap = { small: 1, medium: 5, large: 10, extra_large: 20 };
 
@@ -214,6 +215,7 @@ export async function createParcelRequest(data, files) {
   let routeDuration    = null;
   let intermediateCities = null;
   let routeGeometry    = null;
+  let suggestedPrice   = null;
 
   if (
     pickupEnriched.latitude && pickupEnriched.longitude &&
@@ -237,6 +239,20 @@ export async function createParcelRequest(data, files) {
         const steps = route.legs?.[0]?.steps || [];
         intermediateCities = extractIntermediateCities(steps);
         // route_distance_km is the source of truth for short/long classification in Phase 2
+        
+        // ── Calculate estimated price based on distance, weight, and dimensions ──
+        try {
+          suggestedPrice = calculatePrice(
+            routeDistance, 
+            data.weight || 1,
+            data.length,    // Length in cm
+            data.width,     // Width in cm
+            data.height     // Height in cm
+          );
+          console.log(`[Price] Calculated suggested price: ₹${suggestedPrice} (distance: ${routeDistance}km, weight: ${data.weight}kg, dimensions: ${data.length}×${data.width}×${data.height}cm)`);
+        } catch (priceError) {
+          console.warn(`[Price] Failed to calculate price: ${priceError.message}`);
+        }
       }
     } catch (error) {
       console.error("[GoogleMaps] Route calculation failed:", error.message);
@@ -273,7 +289,8 @@ export async function createParcelRequest(data, files) {
           pickup_address_id:     pickupAddress.id,
           delivery_address_id:   deliveryAddress.id,
           selected_partner_id:   data.selected_partner_id || null,
-          price_quote:           data.price_quote || null,
+          // Use calculated suggestedPrice as the final price_quote
+          price_quote:           suggestedPrice || data.price_quote || null,
           route_distance_km:     routeDistance,
           route_duration_minutes: routeDuration,
           intermediate_cities:   intermediateCities,
@@ -284,7 +301,7 @@ export async function createParcelRequest(data, files) {
       );
 
       await t.commit();
-      return { parcel, pickupAddress, deliveryAddress };
+      return { parcel, pickupAddress, deliveryAddress, suggestedPrice };
     } catch (error) {
       await t.rollback();
       
