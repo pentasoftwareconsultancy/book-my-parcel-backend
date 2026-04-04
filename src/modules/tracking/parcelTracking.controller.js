@@ -16,7 +16,7 @@ export async function handleInitiateTracking(req, res) {
     // Get io instance from app
     const io = req.app.get("io");
     if (io) {
-      io.to(booking_id).emit("tracking_initiated", {
+      io.to(`booking_${booking_id}`).emit("tracking_initiated", {
         booking_id,
         status:           tracking.status,
         encoded_polyline: tracking.encoded_polyline,
@@ -47,13 +47,13 @@ export async function handleUpdateLocation(req, res) {
     // Get io instance from app
     const io = req.app.get("io");
     if (io) {
-      io.to(booking_id).emit("location_updated", {
+      io.to(`booking_${booking_id}`).emit("location-update", {
         booking_id,
-        traveller_lat: tracking.traveller_lat,
-        traveller_lng: tracking.traveller_lng,
-        speed:         tracking.speed,
-        heading:       tracking.heading,
-        status:        tracking.status,
+        lat:     tracking.traveller_lat,
+        lng:     tracking.traveller_lng,
+        speed:   tracking.speed,
+        heading: tracking.heading,
+        status:  tracking.status,
       });
     }
 
@@ -86,7 +86,7 @@ export async function handleCompleteDelivery(req, res) {
     // Get io instance from app
     const io = req.app.get("io");
     if (io) {
-      io.to(booking_id).emit("delivery_completed", {
+      io.to(`booking_${booking_id}`).emit("delivery_completed", {
         booking_id,
         status: tracking.status,
       });
