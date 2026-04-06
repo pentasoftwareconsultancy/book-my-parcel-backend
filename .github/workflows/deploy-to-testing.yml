@@ -1,39 +1,55 @@
-name: Push to Testing Repo (SSH)
+name: Sync Developing → Testing (SSH)
 
 on:
   push:
     branches:
-      - feature/bmp
+      - developing
 
 jobs:
-  sync:
+  sync-to-testing:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Backend Repo
+      # 1. Checkout source repo (developing)
+      - name: Checkout Source Code
         uses: actions/checkout@v3
 
-      - name: Setup SSH
+      # 2. Setup SSH
+      - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
+      # 3. Clone testing repo
       - name: Clone Testing Repo
         run: |
-          git clone git@github.com:pentasoftwareconsultancy/REPO_B_NAME.git repo-b
+          git clone git@github.com:pentasoftwareconsultancy/book-my-parcel-backend.git repo-b
 
-      - name: Copy Backend Code
+      # 4. Checkout testing branch
+      - name: Switch to testing branch
         run: |
-          rsync -av --exclude='.git' --exclude='.env' ./ repo-b/
+          cd repo-b
+          git checkout testing || git checkout -b testing
 
-      - name: Push to Testing Branch
+      # 5. Sync code
+      - name: Sync Code
+        run: |
+          rsync -av --delete \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='.env' \
+          ./ repo-b/
+
+      # 6. Commit and push
+      - name: Push to Testing
         run: |
           cd repo-b
           git config user.name "CI Bot"
-          git config user.email "ci@bot.com"
-          git checkout testing || git checkout -b testing
+          git config user.email "ci@bmp.com"
+
           git add .
-          git commit -m "Auto sync backend to testing" || echo "No changes"
+          git commit -m "Auto sync from developing" || echo "No changes"
+
           git push origin testing
