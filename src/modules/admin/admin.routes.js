@@ -1,17 +1,18 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import { fetchAllUsers, fetchAllBookings, fetchTravelersForKYC, updateKYCStatus, getRecentBookings, getAdminUserRoleStats, getActiveBookingCount, getTotalRevenue } from "./admin.controller.js";
+import { fetchAllUsers, fetchAllBookings, fetchTravelersForKYC, updateKYCStatus, getAdminDashboard } from "./admin.controller.js";
+import { requireAdmin } from "../../middlewares/role.middleware.js";
+import { sensitiveLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { validateStatus } from "../../utils/validation.util.js";
 
 const router = express.Router();
 
-router.get("/users", authMiddleware, fetchAllUsers);
-router.get("/bookings", authMiddleware, fetchAllBookings);
-router.get("/travellers/kyc", authMiddleware, fetchTravelersForKYC);
-router.patch("/travellers/kyc/:id", authMiddleware, validateStatus, updateKYCStatus);
-router.get("/recent", authMiddleware, getRecentBookings);
-router.get("/usercounts", authMiddleware, getAdminUserRoleStats);
-router.get("/bookingcount", authMiddleware, getActiveBookingCount);
-router.get("/totalrevenue", authMiddleware, getTotalRevenue);
+// All admin routes require authentication, admin role, and rate limiting
+router.get("/users", authMiddleware, requireAdmin, sensitiveLimiter, fetchAllUsers);
+router.get("/bookings", authMiddleware, requireAdmin, sensitiveLimiter, fetchAllBookings);
+router.get("/travellers/kyc", authMiddleware, requireAdmin, sensitiveLimiter, fetchTravelersForKYC);
+router.patch("/travellers/kyc/:id", authMiddleware, requireAdmin, sensitiveLimiter, validateStatus, updateKYCStatus);
+router.get("/dashboardoverview", authMiddleware, getAdminDashboard);
+
 
 export default router;

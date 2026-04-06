@@ -23,6 +23,22 @@ const TravellerProfile = sequelize.define(
     vehicle_number: DataTypes.STRING,
     vehicle_model: DataTypes.STRING,
     capacity_kg: DataTypes.INTEGER,
+    rating: {
+      type: DataTypes.DECIMAL(2, 1),
+      defaultValue: 4.8,
+      validate: {
+        min: 0,
+        max: 5
+      }
+    },
+    total_deliveries: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      validate: {
+        min: 0
+      }
+    },
+    profile_photo: DataTypes.STRING,
     status: {
       type: DataTypes.ENUM("INCOMPLETE", "PENDING", "ACTIVE", "INACTIVE"),
       defaultValue: "INCOMPLETE",
@@ -30,6 +46,10 @@ const TravellerProfile = sequelize.define(
     is_available: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+    },
+    last_known_location: {
+      type: DataTypes.GEOMETRY('POINT'),
+      allowNull: true,
     },
   },
   { timestamps: true }
