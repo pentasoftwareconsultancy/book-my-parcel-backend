@@ -293,7 +293,7 @@ async function calculateExactDetour(route, parcelData) {
 
     const parcelRoute = routeResult.routes?.[0];
     if (!parcelRoute || !parcelRoute.distanceMeters) {
-      return null;
+      return null; 
     }
 
     const parcelDistance = parcelRoute.distanceMeters / 1000;
