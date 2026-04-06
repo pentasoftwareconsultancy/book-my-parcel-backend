@@ -1,26 +1,43 @@
-name: Sync Developing → Testing
+name: Deploy to Testing Repo via SSH
 
 on:
   push:
     branches:
-      - developing
+      - feature/bmp
 
 jobs:
-  sync:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout Source Repo
         uses: actions/checkout@v3
 
-      - name: Merge to Testing
+      - name: Setup SSH
         run: |
-          git config user.name "CI Bot"
-          git config user.email "ci@bmp.com"
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
 
-          git fetch origin
-          git checkout testing
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-          git merge origin/developing --no-edit
+      - name: Setup Git Config
+        run: |
+          git config --global user.name "CI Bot"
+          git config --global user.email "ci@bmp.com"
 
+      - name: Clone Target Repo
+        run: |
+          git clone git@github.com:pentasoftwareconsultancy/book-my-parcel-backend.git target-repo
+
+      - name: Copy Files
+        run: |
+          rsync -av --exclude='.git' ./ target-repo/
+
+      - name: Push to Testing Branch
+        run: |
+          cd target-repo
+          git checkout testing || git checkout -b testing
+          git add .
+          git commit -m "Auto deploy from feature/bmp"
           git push origin testing
