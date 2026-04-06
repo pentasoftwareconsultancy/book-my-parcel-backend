@@ -1,0 +1,39 @@
+name: Push to Testing Repo (SSH)
+
+on:
+  push:
+    branches:
+      - feature/bmp
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo A
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone Repo B
+        run: |
+          git clone git@github.com:YOUR_USERNAME/REPO_B.git repo-b
+
+      - name: Copy Files
+        run: |
+          rsync -av --exclude='.git' --exclude='.env' ./ repo-b/
+
+      - name: Push to Testing Branch
+        run: |
+          cd repo-b
+          git config user.name "CI Bot"
+          git config user.email "ci@bot.com"
+          git checkout testing || git checkout -b testing
+          git add .
+          git commit -m "Auto sync to testing" || echo "No changes"
+          git push origin testing
