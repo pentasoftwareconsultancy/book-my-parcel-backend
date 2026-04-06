@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo A
+      - name: Checkout Backend Repo
         uses: actions/checkout@v3
 
       - name: Setup SSH
@@ -20,11 +20,11 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      - name: Clone Repo B
+      - name: Clone Testing Repo
         run: |
-          git clone git@github.com:YOUR_USERNAME/REPO_B.git repo-b
+          git clone git@github.com:pentasoftwareconsultancy/REPO_B_NAME.git repo-b
 
-      - name: Copy Files
+      - name: Copy Backend Code
         run: |
           rsync -av --exclude='.git' --exclude='.env' ./ repo-b/
 
@@ -35,5 +35,5 @@ jobs:
           git config user.email "ci@bot.com"
           git checkout testing || git checkout -b testing
           git add .
-          git commit -m "Auto sync to testing" || echo "No changes"
+          git commit -m "Auto sync backend to testing" || echo "No changes"
           git push origin testing
