@@ -1,0 +1,226 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GitHub Actions Workflow: Deploy Backend to Staging Environment
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Purpose:
+#   Manually deploy backend code to staging environment
+#   Triggered via workflow_dispatch (manual trigger)
+#
+# Trigger:
+#   - Manual workflow_dispatch on staging branch
+#
+# Deployment Target:
+#   - Render Staging Service
+#   - Uses RENDER_DEPLOY_HOOK_STAGING
+#
+# Requirements:
+#   - GitHub Secrets:
+#     * RENDER_DEPLOY_HOOK_STAGING (Render deploy webhook URL for staging)
+#
+# Manual Trigger Instructions:
+#   1. Go to Backend Repository
+#   2. Click "Actions" tab
+#   3. Select "Deploy Backend to Staging" workflow
+#   4. Click "Run workflow"
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Deploy Backend to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_reason:
+        description: 'Reason for manual deployment'
+        required: false
+        type: string
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    env:
+      NODE_VERSION: '18'
+
+    steps:
+      # Step 1: Print deployment context
+      - name: Print Deployment Context
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║      BACKEND STAGING DEPLOYMENT INITIATED                  ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║ Triggered by: ${{ github.actor }}"
+          echo "║ Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║ Reason: ${{ github.event.inputs.deployment_reason || 'Manual staging deployment' }}"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 2: Checkout staging branch
+      - name: Checkout Staging Branch
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 1
+
+      # Step 3: Setup Node.js 18
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 4: Install dependencies
+      - name: Install Dependencies
+        run: |
+          echo "📥 Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed"
+
+      # Step 5: Run linting
+      - name: Run Linting
+        continue-on-error: true
+        run: |
+          if [ -f "package.json" ] && grep -q '"lint"' package.json; then
+            echo "🔍 Running ESLint..."
+            npm run lint
+          else
+            echo "ℹ️  No lint script configured"
+          fi
+
+      # Step 6: Run tests
+      - name: Run Tests
+        continue-on-error: true
+        run: |
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            echo "🧪 Running test suite..."
+            npm run test
+          else
+            echo "ℹ️  No test script configured"
+          fi
+
+      # Step 7: Validate Backend Configuration
+      - name: Validate Backend Configuration
+        run: |
+          echo "⚙️  Validating backend staging configuration..."
+          
+          if [ ! -f "package.json" ]; then
+            echo "❌ package.json not found"
+            exit 1
+          fi
+          
+          if [ ! -f "server.js" ] && [ ! -f "index.js" ] && [ ! -f "app.js" ]; then
+            echo "❌ No server entry point found"
+            exit 1
+          fi
+          
+          echo "✅ Backend configuration is valid"
+
+      # Step 8: Validate Render Staging Configuration
+      - name: Validate Render Staging Configuration
+        run: |
+          echo "🔐 Validating Render staging configuration..."
+          
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}" ]; then
+            echo "❌ RENDER_DEPLOY_HOOK_STAGING not configured"
+            exit 1
+          fi
+          
+          echo "✅ Render staging configuration valid"
+
+      # Step 9: Trigger Render Staging Deployment
+      - name: Deploy Backend to Render Staging
+        run: |
+          echo "🚀 Triggering Render Staging Service deployment..."
+          echo ""
+          echo "📍 Deployment Details:"
+          echo "   Service: Backend Staging"
+          echo "   Branch: staging"
+          echo "   Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          
+          DEPLOY_WEBHOOK="${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
+          
+          HTTP_CODE=$(curl -s -o /tmp/render_response.txt \
+            -w "%{http_code}" \
+            -X POST "$DEPLOY_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"message\":\"Staging deployment initiated by ${{ github.actor }}\",\"timestamp\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"}" \
+            --max-time 30)
+          
+          echo "Response Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+            echo "✅ Render staging deployment triggered successfully"
+            echo ""
+            echo "🔔 Next Steps:"
+            echo "   1. Check Render dashboard for deployment status"
+            echo "   2. Wait ~60 seconds for service to restart"
+            echo "   3. Test staging API endpoint health"
+          else
+            echo "⚠️  Render responded with HTTP $HTTP_CODE"
+            cat /tmp/render_response.txt
+            exit 1
+          fi
+
+      # Step 10: Backend Health Check
+      - name: Verify Backend Staging Health
+        continue-on-error: true
+        run: |
+          echo "🏥 Checking backend staging health..."
+          
+          echo "   ⏳ Waiting 45 seconds for service to be ready..."
+          sleep 45
+          
+          HEALTH_URL="https://bmp-backend-staging-XXXXX.onrender.com/api/health"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 20 \
+            "$HEALTH_URL" || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+            echo "✅ Backend staging is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Health check returned HTTP $HTTP_CODE"
+          fi
+
+      # Step 11: Create deployment summary
+      - name: Create Deployment Summary
+        if: always()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║         BACKEND STAGING DEPLOYMENT SUMMARY                 ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║ Repository: Backend"
+          echo "║ Source Branch: staging"
+          echo "║ Target: Render Staging Service"
+          echo "║ Deployment Status: ${{ job.status }}"
+          echo "║ Triggered by: ${{ github.actor }}"
+          echo "║ Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 12: Error handling
+      - name: Handle Deployment Errors
+        if: failure()
+        run: |
+          echo "❌ Backend Staging deployment failed!"
+          echo ""
+          echo "Troubleshooting:"
+          echo "  • Verify RENDER_DEPLOY_HOOK_STAGING is set"
+          echo "  • Check Render project settings for staging"
+          echo "  • Verify API connectivity and run tests"
+          echo ""
+          exit 1
+
+      # Step 13: Success message
+      - name: Deployment Success
+        if: success()
+        run: |
+          echo ""
+          echo "🎉 Backend staging deployment completed successfully!"
+          echo ""
+          echo "Verify API connectivity and run integration tests"
+          echo ""

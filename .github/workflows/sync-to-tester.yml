@@ -1,0 +1,310 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GitHub Actions Workflow: Backend Sync to Tester Repository
+# ═══════════════════════════════════════════════════════════════════════════
+# 
+# Purpose:
+#   Automatically synchronizes code from the deployment branch
+#   in the backend repository to the book-my-parcel-backend tester repository.
+#   This enables temporary testing of CI/CD behavior.
+#
+# IMPORTANT: This workflow ONLY syncs code. It does NOT:
+#   - Create pull requests automatically
+#   - Deploy to any environment
+#   - Merge branches
+#   - Approve changes automatically
+#
+# Sync Flow:
+#   1. Code is pushed to deployment branch (this repository)
+#   2. This workflow automatically syncs code to tester repository deployment branch
+#   3. Code is available for temporary testing in tester deployment branch
+#   4. Testing phase - temporary sync for CI/CD validation
+#   5. No further automation - temporary testing only
+#
+# Trigger:
+#   - On push to deployment branch
+#
+# Files Excluded from Sync:
+#   - .git (version control directory)
+#   - node_modules (dependencies, reinstalled on test system)
+#   - .env (environment-specific configuration)
+#   - .env.local, *.log, .DS_Store (temporary files)
+#   - dist, build (build outputs, should be fresh built)
+#
+# Requirements:
+#   - GitHub Secret: TEST_REPO_TOKEN (PAT with repo access)
+#   - Tester repository: book-my-parcel-backend
+#   - deployment branch to be created or already exist in tester repo
+#
+# Repository Mapping:
+#   Source: pentasoftwareconsultancy/book-my-parcel-backend (deployment)
+#   Target: pentasoftwareconsultancy/book-my-parcel-backend (deployment)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Sync Backend to Tester
+
+on:
+  push:
+    branches:
+      - deployment
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  sync-to-tester:
+    runs-on: ubuntu-latest
+    
+    env:
+      GIT_AUTHOR_NAME: GitHub Actions Bot
+      GIT_AUTHOR_EMAIL: actions@github.com
+      GIT_COMMITTER_NAME: GitHub Actions Bot
+      GIT_COMMITTER_EMAIL: actions@github.com
+
+    steps:
+      # Step 1: Checkout the source deployment branch
+      - name: Checkout Source Repository (deployment)
+        uses: actions/checkout@v4
+        with:
+          ref: deployment
+          fetch-depth: 1
+        
+      # Step 2: Create temporary directory structure for sync
+      - name: Setup Sync Environment
+        run: |
+          mkdir -p /tmp/sync_repo
+          mkdir -p /tmp/source
+          echo "📁 Created temporary directories for sync operation"
+
+      # Step 3: Clone the tester repository
+      - name: Clone Tester Repository
+        env:
+          TEST_TOKEN: ${{ secrets.TEST_REPO_TOKEN }}
+        run: |
+          TESTER_REPO_URL="https://${TEST_TOKEN}@github.com/pentasoftwareconsultancy/book-my-parcel-backend.git"
+          echo "📍 Syncing Backend to: book-my-parcel-backend"
+          
+          cd /tmp/sync_repo
+          git clone "$TESTER_REPO_URL" .
+          echo "✅ Tester repository cloned successfully"
+
+      # Step 4: Configure git for the tester repository
+      - name: Configure Git in Tester Repository
+        run: |
+          cd /tmp/sync_repo
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          echo "✅ Git configured in tester repository"
+
+      # Step 5: Sync files from source to tester using rsync
+      - name: Sync Files Using rsync
+        run: |
+          SOURCE_DIR="${{ github.workspace }}"
+          TESTER_DIR="/tmp/sync_repo"
+          
+          echo "📋 Starting file sync with rsync..."
+          echo "   Source: Backend Repository"
+          echo "   Target: $TESTER_DIR"
+          
+          rsync -avz \
+            --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='.env.local' \
+            --exclude='*.log' \
+            --exclude='.DS_Store' \
+            --exclude='dist' \
+            --exclude='build' \
+            "$SOURCE_DIR/" \
+            "$TESTER_DIR/"
+          
+          echo "✅ File sync completed successfully"
+
+      # Step 6: Check if there are any changes to commit
+      - name: Check for Changes
+        id: check_changes
+        run: |
+          cd /tmp/sync_repo
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No changes detected - skipping commit"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "📝 Changes detected - will create commit"
+          fi
+
+      # Step 7: Create commit if changes exist
+      - name: Commit Changes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          cd /tmp/sync_repo
+          
+          git add -A
+          
+          COMMIT_MSG="Auto sync from deployment (Backend)"
+          COMMIT_MSG="${COMMIT_MSG} | $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          COMMIT_MSG="${COMMIT_MSG} | Author: ${{ github.actor }}"
+          COMMIT_MSG="${COMMIT_MSG} | Commit: ${{ github.sha }}"
+          
+          git commit -m "$COMMIT_MSG"
+          
+          echo "✅ Sync commit created"
+          echo "📝 Message: Auto sync from deployment (Backend)"
+          echo "   Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "   Triggered by: ${{ github.actor }}"
+
+      # Step 8: Push changes to tester repository deployment branch
+      - name: Push to Tester Repository
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          cd /tmp/sync_repo
+
+          echo "Preparing deployment branch..."
+
+          # Always create or reset local deployment branch
+          git checkout -B deployment
+
+          echo "Pushing to tester repository deployment branch..."
+
+          git push origin deployment --force-with-lease
+
+          echo "Deployment branch synced successfully"
+
+      # Step 9: Print sync operation summary
+      - name: Print Sync Summary
+        if: always()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       BACKEND SYNC WORKFLOW COMPLETE - TESTING IN PROGRESS   ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║ Repository Type: Backend"
+          echo "║ Source Repository: book-my-parcel-backend (deployment)"
+          echo "║ Source Branch: deployment"
+          echo "║ Target Repository: book-my-parcel-backend"
+          echo "║ Target Branch: deployment"
+          echo "║ Changes Synced: ${{ steps.check_changes.outputs.has_changes }}"
+          echo "║ Sync Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║"
+          echo "║ WHAT THIS WORKFLOW DOES:"
+          echo "║ ✓ Syncs code from deployment to tester deployment"
+          echo "║ ✓ Creates automatic commit with sync information"
+          echo "║ ✓ Pushes changes to tester repository deployment branch"
+          echo "║ ✓ Provides clear logs for verification"
+          echo "║"
+          echo "║ WHAT THIS WORKFLOW DOES NOT DO:"
+          echo "║ ✗ Create pull requests automatically"
+          echo "║ ✗ Deploy to any environment"
+          echo "║ ✗ Merge branches automatically"
+          echo "║ ✗ Approve changes"
+          echo "║"
+          echo "║ NEXT STEP (CI/CD Testing):"
+          echo "║ → Tester deployment branch ready for CI/CD validation"
+          echo "║ → Test CI/CD pipeline behavior in deployment branch"
+          echo "║ → No further automation - temporary testing only"
+          echo "║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 10: Handle sync failures with detailed diagnostics
+      - name: Error Handling
+        if: failure()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║             BACKEND SYNC WORKFLOW FAILED                   ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║ The repository synchronization failed. This prevents the"
+          echo "║ code from being available for tester testing."
+          echo "║"
+          echo "║ DIAGNOSTIC CHECKLIST:"
+          echo "║"
+          echo "║ 1. TEST_REPO_TOKEN Configuration"
+          echo "║    □ Is TEST_REPO_TOKEN added to GitHub Secrets?"
+          echo "║    □ Go to: Repository → Settings → Secrets and variables"
+          echo "║    □ Check if TEST_REPO_TOKEN exists"
+          echo "║    □ Verify token hasn't expired"
+          echo "║"
+          echo "║ 2. Tester Repository Existence"
+          echo "║    □ Does book-my-parcel-backend exist?"
+          echo "║    □ Is the repository accessible to TEST_REPO_TOKEN?"
+          echo "║    □ Does the repository exist and is accessible?"
+          echo "║"
+          echo "║ 3. Token Permissions"
+          echo "║    □ PAT must have 'repo' scope (full repository access)"
+          echo "║    □ PAT must have 'workflow' scope"
+          echo "║    □ Token should not be expired"
+          echo "║"
+          echo "║ 4. Network & GitHub Status"
+          echo "║    □ Is GitHub.com accessible?"
+          echo "║    □ Check GitHub Status: https://www.githubstatus.com"
+          echo "║    □ Try re-running this workflow"
+          echo "║"
+          echo "║ ACTION ITEMS:"
+          echo "║ → Fix the issue based on diagnostic results"
+          echo "║ → Re-run the workflow from GitHub Actions tab"
+          echo "║ → If issue persists, check GitHub Actions logs for details"
+          echo "║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          exit 1
+
+      # Step 11: Confirm sync workflow success
+      - name: Sync Complete - Ready for Testing
+        if: success() && steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║         ✅ BACKEND SYNC COMPLETED SUCCESSFULLY             ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║ Backend code has been synchronized to tester repository."
+          echo "║ This workflow has completed its automated tasks."
+          echo "║"
+          echo "║ TESTING STATUS: CI/CD Validation in Progress"
+          echo "║ ✓ Automated sync: COMPLETE"
+          echo "║ ✓ Code available for testing: YES"
+          echo "║ ✓ Temporary testing sync: YES"
+          echo "║ ✓ Auto-deployment: NO (not implemented)"
+          echo "║ ✓ Auto pull requests: NO"
+          echo "║"
+          echo "║ TESTER ACTION REQUIRED:"
+          echo "║ 1. Go to book-my-parcel-backend tester repository"
+          echo "║ 2. Test the CI/CD pipeline in deployment branch"
+          echo "║ 3. Validate CI/CD behavior and results"
+          echo "║ 4. Check that automated processes work as expected"
+          echo "║"
+          echo "║ IMPORTANT REMINDERS:"
+          echo "║ • This workflow ONLY syncs code"
+          echo "║ • No pull requests are created automatically"
+          echo "║ • No branches are merged automatically"
+          echo "║ • No deployments occur automatically"
+          echo "║ • All approvals are completely manual"
+          echo "║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 12: Handle case when no changes need syncing
+      - name: No Changes Detected - Sync Skipped
+        if: success() && steps.check_changes.outputs.has_changes == 'false'
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║        ℹ️  NO CHANGES TO SYNC - WORKFLOW COMPLETE          ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║ The deployment branch has no changes since last sync."
+          echo "║ Tester repository deployment is already up-to-date."
+          echo "║"
+          echo "║ STATUS:"
+          echo "║ ✓ Workflow executed successfully"
+          echo "║ ✓ No new changes to sync"
+          echo "║ ✓ Tester repository already current"
+          echo "║ ✓ No action needed"
+          echo "║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""

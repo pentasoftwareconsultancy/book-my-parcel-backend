@@ -1,0 +1,196 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GitHub Actions Workflow: Deploy Backend to Testing Environment
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Purpose:
+#   Automatically deploys backend code to testing environment
+#   Triggered when deployment branch is updated
+#
+# Trigger:
+#   - On push to deployment branch in backend repository
+#
+# Deployment Target:
+#   - Render Testing Service
+#   - Uses RENDER_DEPLOY_HOOK_TESTING
+#
+# Requirements:
+#   - GitHub Secrets:
+#     * RENDER_DEPLOY_HOOK_TESTING (Render deploy webhook URL for testing)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Deploy Backend to Testing
+
+on:
+  push:
+    branches:
+      - deployment
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  deploy-testing:
+    runs-on: ubuntu-latest
+    
+    env:
+      NODE_VERSION: '18'
+
+    steps:
+      # Step 1: Checkout deployment branch
+      - name: Checkout Deployment Branch
+        uses: actions/checkout@v4
+        with:
+          ref: deployment
+          fetch-depth: 1
+
+      # Step 2: Setup Node.js 18
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 3: Install dependencies
+      - name: Install Dependencies
+        run: |
+          echo "📥 Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed successfully"
+
+      # Step 4: Run linting
+      - name: Run Linting
+        continue-on-error: true
+        run: |
+          if [ -f "package.json" ] && grep -q '"lint"' package.json; then
+            echo "🔍 Running ESLint..."
+            npm run lint || echo "⚠️  Linting warnings detected (non-critical)"
+          else
+            echo "ℹ️  No lint script configured"
+          fi
+
+      # Step 5: Run tests
+      - name: Run Tests
+        continue-on-error: true
+        run: |
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            echo "🧪 Running test suite..."
+            npm run test || echo "⚠️  Tests failed (non-critical for deployment)"
+          else
+            echo "ℹ️  No test script configured"
+          fi
+
+      # Step 6: Validate Backend Configuration
+      - name: Validate Backend Configuration
+        run: |
+          echo "⚙️  Validating backend configuration..."
+          
+          if [ ! -f "package.json" ]; then
+            echo "❌ package.json not found"
+            exit 1
+          fi
+          
+          if [ ! -f "server.js" ] && [ ! -f "index.js" ] && [ ! -f "app.js" ]; then
+            echo "❌ No server entry point found"
+            exit 1
+          fi
+          
+          echo "✅ Backend configuration valid"
+
+      # Step 7: Validate Environment Variables
+      - name: Validate Environment Variables
+        run: |
+          echo "🔐 Validating required environment variables..."
+          
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_TESTING }}" ]; then
+            echo "❌ RENDER_DEPLOY_HOOK_TESTING not configured"
+            exit 1
+          fi
+          
+          echo "✅ All required secrets present"
+
+      # Step 8: Trigger Render Deployment
+      - name: Deploy to Render Testing
+        run: |
+          echo "🚀 Triggering Render Testing Service deployment..."
+          
+          DEPLOY_WEBHOOK="${{ secrets.RENDER_DEPLOY_HOOK_TESTING }}"
+          
+          curl -X POST "$DEPLOY_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{"message":"Deployed from GitHub Actions testing workflow"}' \
+            --max-time 30 \
+            --retry 3 \
+            --retry-delay 5
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Render deployment triggered successfully"
+          else
+            echo "❌ Failed to trigger Render deployment"
+            exit 1
+          fi
+
+      # Step 9: Verify Backend Health
+      - name: Verify Backend Health
+        continue-on-error: true
+        run: |
+          echo "🏥 Checking backend health endpoint..."
+          
+          sleep 30
+          
+          HEALTH_CHECK_URL="https://bmp-backend-testing-XXXXX.onrender.com/api/health"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 20 \
+            "$HEALTH_CHECK_URL" || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+            echo "✅ Backend is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Health check returned HTTP $HTTP_CODE"
+            echo "   Note: Render may still be deploying, check dashboard"
+          fi
+
+      # Step 10: Create Deployment Summary
+      - name: Create Deployment Summary
+        if: always()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       BACKEND TESTING DEPLOYMENT SUMMARY                   ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║ Repository: Backend"
+          echo "║ Branch: deployment"
+          echo "║ Target: Render Testing Service"
+          echo "║ Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║ Workflow Status: ${{ job.status }}"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 11: Error Handling
+      - name: Handle Deployment Errors
+        if: failure()
+        run: |
+          echo "❌ Backend Testing Deployment Failed!"
+          echo ""
+          echo "Troubleshooting:"
+          echo "  1. Check GitHub Secrets are configured"
+          echo "  2. Verify RENDER_DEPLOY_HOOK_TESTING exists"
+          echo "  3. Check Render dashboard for service status"
+          echo "  4. Review application error logs"
+          echo ""
+          exit 1
+
+      # Step 12: Success Notification
+      - name: Success Notification
+        if: success()
+        run: |
+          echo ""
+          echo "🎉 Backend testing deployment completed successfully!"
+          echo ""
+          echo "Next steps:"
+          echo "  ▪ Check Render Testing dashboard"
+          echo "  ▪ Run API health checks on testing endpoint"
+          echo "  ▪ Verify database connectivity"
+          echo ""

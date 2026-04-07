@@ -1,0 +1,330 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GitHub Actions Workflow: Promote to Staging
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Purpose:
+#   Creates a pull request from tester's main branch to development repo's staging branch
+#   Triggered when code is merged to main in book-my-parcel-backend (tester repo)
+#
+# Trigger:
+#   - repository_dispatch event from tester repository
+#   - Payload includes: tester_repo_ref (commit/branch), commit_message
+#
+# Action:
+#   1. Fetch latest code from tester repository's main
+#   2. Create or update a branch in development repo
+#   3. Create a pull request to staging branch
+#   4. Does NOT merge automatically
+#
+# Approval Gate:
+#   - PR to staging requires 1 approval and cannot be force-pushed
+#   - Configured via GitHub branch protection rules (see README)
+#
+# Requirements:
+#   - GitHub Secret: GITHUB_TOKEN (auto-provided by GitHub Actions)
+#   - Secrets: TESTER_REPO_BACKEND (optional, for reference)
+#
+# Branch Protection Setup Required:
+#   - Repository Settings → Branches → Add rule for 'staging'
+#   - Require pull request before merging
+#   - Require 1 approval
+#   - Dismiss stale PR approvals
+#   - Require status checks to pass
+#   - Include administrators
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Promote Backend to Staging
+
+on:
+  repository_dispatch:
+    types: [promote-to-staging]
+
+jobs:
+  create-staging-pr:
+    runs-on: ubuntu-latest
+    
+    env:
+      TESTER_REPO: "pentasoftwareconsultancy/book-my-parcel-backend"
+      TESTER_BRANCH: "main"
+      DEV_REPO_OWNER: "Priti6542"
+      DEV_REPO_NAME: "BMP-Backend"
+      DEV_TARGET_BRANCH: "staging"
+      PR_BRANCH: "promotion/tester-main-to-staging"
+
+    steps:
+      # Step 1: Print workflow context
+      - name: Print Promotion Context
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║     BACKEND PROMOTION TO STAGING - INITIATING                  ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          echo "║ Triggered by: ${{ github.event.sender.login }}"
+          echo "║ Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║ Event: repository_dispatch (promote-to-staging)"
+          echo "║"
+          echo "║ Source: Tester repository main"
+          echo "║ Target: Development repository staging"
+          echo "║"
+          if [ ! -z "${{ github.event.client_payload.commit_sha }}" ]; then
+            echo "║ Commit SHA: ${{ github.event.client_payload.commit_sha }}"
+          fi
+          if [ ! -z "${{ github.event.client_payload.commit_message }}" ]; then
+            echo "║ Commit Message: ${{ github.event.client_payload.commit_message }}"
+          fi
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 2: Checkout development repository
+      - name: Checkout Development Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      # Step 3: Setup Git configuration
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+      # Step 4: Fetch from tester repository
+      - name: Fetch Latest from Tester Repository
+        run: |
+          echo "🔄 Fetching latest from tester repository main branch..."
+          
+          # Add tester repo as remote
+          git remote add tester "https://github.com/${{ env.TESTER_REPO }}.git" || true
+          
+          # Fetch tester's main branch
+          git fetch tester main --depth=1
+          
+          echo "✅ Tester repository fetched successfully"
+          echo ""
+          echo "📍 Latest commit from tester main:"
+          git log tester/main -1 --oneline
+
+      # Step 5: Check for existing promotion branch
+      - name: Check for Existing Promotion Branch
+        run: |
+          echo "🔍 Checking for existing promotion branch: ${{ env.PR_BRANCH }}"
+          
+          if git ls-remote origin "${{ env.PR_BRANCH }}" | grep -q "${{ env.PR_BRANCH }}"; then
+            echo "✅ Promotion branch exists, will update it"
+            echo "BRANCH_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "📝 Promotion branch does not exist, will create new one"
+            echo "BRANCH_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      # Step 6: Create/update promotion branch
+      - name: Create or Update Promotion Branch
+        run: |
+          echo "🔨 Creating/updating promotion branch from tester main..."
+          
+          # Create/checkout the promotion branch
+          if [ "${{ env.BRANCH_EXISTS }}" = "true" ]; then
+            echo "Checking out existing branch..."
+            git checkout ${{ env.PR_BRANCH }}
+            echo "Resetting to tester main..."
+            git reset --hard tester/main
+          else
+            echo "Creating new branch from tester main..."
+            git checkout -b ${{ env.PR_BRANCH }} tester/main
+          fi
+          
+          # Push the branch
+          echo "📤 Pushing promotion branch to development repository..."
+          git push origin HEAD:${{ env.PR_BRANCH }} --force-with-lease
+          
+          echo "✅ Promotion branch ready: ${{ env.PR_BRANCH }}"
+
+      # Step 7: Check if PR already exists
+      - name: Check for Existing Pull Request
+        id: check_pr
+        run: |
+          echo "🔍 Checking for existing pull request to staging..."
+          
+          PR_COUNT=$(gh pr list \
+            --base ${{ env.DEV_TARGET_BRANCH }} \
+            --head ${{ env.PR_BRANCH }} \
+            --state open \
+            --json number \
+            --jq 'length')
+          
+          if [ "$PR_COUNT" -gt 0 ]; then
+            PR_NUMBER=$(gh pr list \
+              --base ${{ env.DEV_TARGET_BRANCH }} \
+              --head ${{ env.PR_BRANCH }} \
+              --state open \
+              --json number \
+              --jq '.[0].number')
+            
+            echo "✅ Pull request #$PR_NUMBER already exists"
+            echo "PR_EXISTS=true" >> $GITHUB_ENV
+            echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          else
+            echo "📝 No existing pull request found"
+            echo "PR_EXISTS=false" >> $GITHUB_ENV
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 8: Create new pull request
+      - name: Create Pull Request to Staging
+        if: env.PR_EXISTS == 'false'
+        id: create_pr
+        run: |
+          echo "📝 Creating pull request: ${{ env.PR_BRANCH }} → ${{ env.DEV_TARGET_BRANCH }}"
+          
+          PR_TITLE="🚀 Promotion: Backend Tester Main → Staging"
+          
+          PR_BODY="## Automatic Promotion to Staging
+          
+          This pull request was automatically created by the promotion workflow.
+          
+          ### Details
+          - **Source**: Tester repository \`main\` branch
+          - **Target**: Development repository \`${{ env.DEV_TARGET_BRANCH }}\` branch
+          - **Triggered**: ${{ github.event.sender.login }}
+          - **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          
+          ### Next Steps
+          1. ✅ Review the changes
+          2. ⏳ Wait for all status checks to pass
+          3. 👤 Obtain manager approval (required 1)
+          4. 🔀 Merge to staging
+          5. 🎯 Then create and approve PR to main for production release
+          
+          ### Code Promotion Flow
+          \\\`\\\`\\\`
+          deployment → testing → staging (YOU ARE HERE) → main (production)
+          \\\`\\\`\\\`
+          
+          ### Important
+          - **Do not force push** to this branch
+          - **Status checks must pass** before merging
+          - **Approval required** before merging (branch protection rule)
+          - **Do not merge this PR automatically** - manager action required
+          
+          ---
+          *This PR was created automatically by GitHub Actions*"
+          
+          # Create PR using GitHub CLI
+          PR_URL=$(gh pr create \
+            --title "$PR_TITLE" \
+            --body "$PR_BODY" \
+            --base ${{ env.DEV_TARGET_BRANCH }} \
+            --head ${{ env.PR_BRANCH }} \
+            --draft=false \
+            --repo "${{ github.repository }}" 2>&1 | grep -oP 'https://github.com/[^\s]+' | head -1)
+          
+          if [ -z "$PR_URL" ]; then
+            echo "❌ Failed to create pull request"
+            exit 1
+          fi
+          
+          # Extract PR number from URL
+          PR_NUMBER=$(echo "$PR_URL" | grep -oP 'pull/\K[0-9]+')
+          
+          echo "✅ Pull request created successfully!"
+          echo "PR_URL=$PR_URL" >> $GITHUB_ENV
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 9: Update existing pull request
+      - name: Update Existing Pull Request
+        if: env.PR_EXISTS == 'true'
+        run: |
+          echo "📤 Updating PR #${{ env.PR_NUMBER }} with latest changes..."
+          
+          # PR is automatically updated since branch was force-with-lease pushed
+          echo "✅ Pull request #${{ env.PR_NUMBER }} has been updated with latest code from tester main"
+          
+          # Get PR details
+          gh pr view ${{ env.PR_NUMBER }} \
+            --repo "${{ github.repository }}" \
+            --json "url,title,state" \
+            --template "PR: {{.title}} ({{.state}}) - {{.url}}"
+          echo ""
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 10: Add labels and assign reviewers (optional)
+      - name: Configure Pull Request
+        if: env.PR_EXISTS == 'false'
+        run: |
+          echo "🏷️  Adding labels and configuring PR..."
+          
+          # Add labels
+          gh pr edit ${{ env.PR_NUMBER }} \
+            --add-label "promotion,staging,approval-required" \
+            --repo "${{ github.repository }}" 2>/dev/null || true
+          
+          echo "✅ Pull request configured"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 11: Create promotion summary
+      - name: Create Promotion Summary
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║         BACKEND PROMOTION PR CREATED SUCCESSFULLY              ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          
+          if [ "${{ env.PR_EXISTS }}" = "true" ]; then
+            echo "║ Status: ✅ UPDATED (PR already existed)"
+            echo "║ PR Number: #${{ env.PR_NUMBER }}"
+          else
+            echo "║ Status: ✅ CREATED"
+            echo "║ PR Number: #${{ env.PR_NUMBER }}"
+            echo "║ PR URL: ${{ env.PR_URL }}"
+          fi
+          
+          echo "║"
+          echo "║ Promotion Details:"
+          echo "║ ├─ Source Branch: ${{ env.PR_BRANCH }}"
+          echo "║ ├─ Target Branch: ${{ env.DEV_TARGET_BRANCH }}"
+          echo "║ ├─ Repository: ${{ github.repository }}"
+          echo "║ └─ Status: ⏳ Awaiting Approval"
+          echo "║"
+          echo "║ Next Action Required:"
+          echo "║ 👤 Manager must review and approve"
+          echo "║ 🔀 Then merge to staging branch"
+          echo "║ 📋 Finally create PR to main for production release"
+          echo "║"
+          echo "║ ⚠️  IMPORTANT:"
+          echo "║ • Do NOT force push to this branch"
+          echo "║ • Do NOT merge automatically"
+          echo "║ • Approval is REQUIRED before merge"
+          echo "║ • All status checks must PASS before merge"
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 12: Handle errors
+      - name: Handle Workflow Errors
+        if: failure()
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║     ❌ BACKEND PROMOTION WORKFLOW FAILED                       ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║ Please check the logs above for error details."
+          echo "║"
+          echo "║ Possible causes:"
+          echo "║ • Tester repository not accessible"
+          echo "║ • GitHub token has insufficient permissions"
+          echo "║ • conflicting changes in staging branch"
+          echo "║"
+          echo "║ Resolution:"
+          echo "║ • Verify GitHub token has 'repo' and 'workflow' scopes"
+          echo "║ • Check repository access permissions"
+          echo "║ • Manual PR creation may be required"
+          echo "║"
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""
+          exit 1

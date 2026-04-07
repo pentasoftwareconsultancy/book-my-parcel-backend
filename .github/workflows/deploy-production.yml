@@ -1,0 +1,303 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GitHub Actions Workflow: Deploy Backend to Production
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Purpose:
+#   Automatically deploys backend code to production when main branch is updated
+#   This is the final production deployment workflow with safety checks
+#
+# Trigger:
+#   - On push to main branch
+#
+# Deployment Target:
+#   - Render Production Service
+#   - Uses RENDER_DEPLOY_HOOK_PRODUCTION
+#
+# Requirements:
+#   - GitHub Secrets:
+#     * RENDER_DEPLOY_HOOK_PRODUCTION (Render deploy webhook URL)
+#
+# Safety Features:
+#   - Environment protection rules (requires approval)
+#   - Comprehensive testing before deployment
+#   - Configuration validation
+#   - Health checks
+#   - Clear audit trail
+#
+# Important Notes:
+#   ⚠️  This workflow automatically deploys to PRODUCTION
+#   ⚠️  Only merge to main when ready for production release
+#   ⚠️  Ensure all tests pass before merging
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Deploy Backend to Production
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    env:
+      NODE_VERSION: '18'
+
+    steps:
+      # Step 1: Log production deployment start
+      - name: Log Production Deployment Start
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║         🚨 BACKEND PRODUCTION DEPLOYMENT INITIATED 🚨      ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║ Repository: Backend"
+          echo "║ Branch: main"
+          echo "║ Commit: ${{ github.sha }}"
+          echo "║ Author: ${{ github.actor }}"
+          echo "║ Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║"
+          echo "║ This deployment will affect LIVE production environment!"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 2: Checkout main branch
+      - name: Checkout Main Branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # Step 3: Setup Node.js 18
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 4: Install dependencies with strict verification
+      - name: Install Dependencies
+        run: |
+          echo "📥 Installing dependencies for production..."
+          npm ci --prefer-offline --no-audit
+          echo "✅ Dependencies installed"
+
+      # Step 5: Run ESLint with strict settings
+      - name: Run Code Linting
+        run: |
+          echo "🔍 Running ESLint with strict mode..."
+          
+          if grep -q '"lint"' package.json; then
+            npm run lint -- --max-warnings 0 || {
+              echo "❌ Linting failed"
+              exit 1
+            }
+            echo "✅ Linting passed with zero warnings"
+          else
+            echo "⚠️  No lint script configured"
+          fi
+
+      # Step 6: Run comprehensive test suite
+      - name: Run Test Suite
+        run: |
+          echo "🧪 Running production test suite..."
+          
+          if grep -q '"test"' package.json; then
+            npm run test -- --coverage || {
+              echo "❌ Tests failed"
+              exit 1
+            }
+            echo "✅ All tests passed"
+          else
+            echo "⚠️  No test script configured"
+          fi
+
+      # Step 7: Security audit
+      - name: Security Audit
+        continue-on-error: true
+        run: |
+          echo "🔐 Checking for security vulnerabilities..."
+          npm audit --audit-level=moderate
+          echo "✅ Security audit completed"
+
+    outputs:
+      repo_type: backend
+
+  deploy-production:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production
+    
+    env:
+      NODE_VERSION: '18'
+
+    steps:
+      # Step 1: Checkout main branch
+      - name: Checkout Main Branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      # Step 2: Setup Node.js
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 3: Install dependencies
+      - name: Install Dependencies
+        run: |
+          echo "📥 Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed"
+
+      # Step 4: Pre-deployment checks
+      - name: Pre-Deployment Backend Verification
+        run: |
+          echo "⚙️  Performing pre-deployment backend verification..."
+          
+          for entry in server.js index.js app.js; do
+            if [ -f "$entry" ]; then
+              echo "✅ Entry point found: $entry"
+              break
+            fi
+          done
+          
+          if [ -f ".env.example" ] || [ -f ".env.template" ]; then
+            echo "✅ Environment template found"
+          else
+            echo "⚠️  No .env.example/.env.template found"
+          fi
+          
+          echo "✅ Pre-deployment verification passed"
+
+      # Step 5: Verify Production Secrets
+      - name: Verify Production Secrets
+        run: |
+          echo "🔐 Verifying production secrets configuration..."
+          
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}" ]; then
+            echo "❌ RENDER_DEPLOY_HOOK_PRODUCTION not configured"
+            exit 1
+          fi
+          
+          echo "✅ Production secrets verified"
+
+      # Step 6: Trigger Render Production Deployment
+      - name: Deploy Backend to Render Production
+        id: deployment
+        run: |
+          echo "🚀 Triggering Backend Render Production Deployment..."
+          echo ""
+          echo "⚙️  Deployment Details:"
+          echo "   Service: Backend Production"
+          echo "   Branch: main"
+          echo "   Commit: ${{ github.sha }}"
+          echo "   Author: ${{ github.actor }}"
+          echo "   Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          
+          DEPLOY_WEBHOOK="${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
+          
+          HTTP_CODE=$(curl -s -o /tmp/render_prod_response.txt \
+            -w "%{http_code}" \
+            -X POST "$DEPLOY_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"message\":\"Production deployment from main branch\",
+              \"commit\":\"${{ github.sha }}\",
+              \"author\":\"${{ github.actor }}\",
+              \"timestamp\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"
+            }" \
+            --max-time 30)
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+            echo "✅ Backend production deployment triggered"
+            echo ""
+            echo "Deployment webhook response:"
+            cat /tmp/render_prod_response.txt
+            echo ""
+            echo "url=https://bmp-backend-production.onrender.com" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Deployment webhook failed (HTTP $HTTP_CODE)"
+            cat /tmp/render_prod_response.txt
+            exit 1
+          fi
+
+      # Step 7: Backend Production Health Check
+      - name: Backend Production Health Check
+        continue-on-error: true
+        run: |
+          echo "🏥 Checking backend production health..."
+          
+          echo "   ⏳ Waiting 60 seconds for service startup..."
+          sleep 60
+          
+          HEALTH_ENDPOINT="https://bmp-backend-production.onrender.com/api/health"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 20 \
+            "$HEALTH_ENDPOINT" 2>/dev/null || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+            echo "✅ Backend production is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Unexpected health check response (HTTP $HTTP_CODE)"
+            echo "    Service may still be starting, check Render dashboard"
+          fi
+
+      # Step 8: Create Deployment Report
+      - name: Create Production Deployment Report
+        if: always()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║      BACKEND PRODUCTION DEPLOYMENT REPORT                  ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║ Repository: Backend"
+          echo "║ Source Branch: main"
+          echo "║ Target: Render Production"
+          echo "║ Deployment Status: ${{ job.status }}"
+          echo "║ Commit: ${{ github.sha }}"
+          echo "║ Author: ${{ github.actor }}"
+          echo "║ Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 9: Success notification
+      - name: Production Deployment Success
+        if: success()
+        run: |
+          echo ""
+          echo "🎉🎉🎉 BACKEND PRODUCTION DEPLOYMENT SUCCESSFUL 🎉🎉🎉"
+          echo ""
+          echo "✅ Backend is now live in production!"
+          echo ""
+          echo "Next steps:"
+          echo "  • Verify API endpoints are responding"
+          echo "  • Check Render logs for errors"
+          echo "  • Monitor production database"
+          echo ""
+
+      # Step 10: Error notification
+      - name: Deployment Failure
+        if: failure()
+        run: |
+          echo ""
+          echo "❌ Backend Production Deployment Failed!"
+          echo ""
+          echo "Troubleshooting:"
+          echo "  • Check GitHub Secrets configuration"
+          echo "  • Verify Render deploy webhook is valid"
+          echo "  • Review Render dashboard for errors"
+          echo "  • Check application error logs"
+          echo ""
+          exit 1

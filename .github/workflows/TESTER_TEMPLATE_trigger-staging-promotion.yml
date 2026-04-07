@@ -1,0 +1,265 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GitHub Actions Workflow: Trigger Staging Promotion
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# DEPLOYMENT LOCATION:
+#   This file should be copied to the tester repository:
+#   book-my-parcel-backend/.github/workflows/trigger-staging-promotion.yml
+#
+# Repository: book-my-parcel-backend (Tester Repository)
+# Location: .github/workflows/trigger-staging-promotion.yml
+#
+# Purpose:
+#   When code is merged to main in the tester repository,
+#   send a repository_dispatch event to the development repository
+#   to automatically create a PR from testing to staging
+#
+# Trigger:
+#   - On push to main branch (after PR merge or direct push)
+#
+# Action:
+#   - POST to GitHub API: /repos/{owner}/{repo}/dispatches
+#   - Event type: promote-to-staging
+#   - Payload includes: commit_sha, commit_message
+#
+# Important:
+#   - Does NOT deploy
+#   - Does NOT merge PRs
+#   - Only sends notification to development repository
+#   - Uses DEV_REPO_TOKEN secret (stored in GitHub Secrets)
+#
+# Setup:
+#   1. Copy this file to .github/workflows/trigger-staging-promotion.yml
+#   2. In GitHub: Settings → Secrets and variables → Actions
+#   3. Add secret: DEV_REPO_TOKEN (GitHub PAT with repo + workflow scopes)
+#   4. Push to main to test
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Trigger Staging Promotion
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  trigger-promotion:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Print trigger detection
+      - name: Detect Tester Main Branch Update
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║                                                               ║"
+          echo "║  ✅ TESTER MAIN DETECTED - CODE MERGED SUCCESSFULLY           ║"
+          echo "║                                                               ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║  Repository: ${{ github.repository }}"
+          echo "║  Branch: main"
+          echo "║  Event: Push (PR Merge)"
+          echo "║  Commit: ${{ github.sha }}"
+          echo "║  Author: ${{ github.actor }}"
+          echo "║  Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║"
+          echo "║  This triggers automatic promotion to staging in development repo"
+          echo "║"
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 2: Validate required token
+      - name: Validate DEV_REPO_TOKEN Secret
+        run: |
+          echo "🔑 Checking DEV_REPO_TOKEN configuration..."
+          echo ""
+          
+          if [ -z "${{ secrets.DEV_REPO_TOKEN }}" ]; then
+            echo "❌ ERROR: DEV_REPO_TOKEN is not configured!"
+            echo "
+
+"
+            echo "To fix this:"
+            echo "  1. Go to: https://github.com/settings/tokens/new"
+            echo "  2. Create token with scopes: repo, workflow"
+            echo "  3. In this repository:"
+            echo "     Settings → Secrets and variables → Actions"
+            echo "  4. Create secret: DEV_REPO_TOKEN"
+            exit 1
+          fi
+          
+          echo "✅ DEV_REPO_TOKEN is configured"
+          echo ""
+
+      # Step 3: Extract commit message
+      - name: Extract Commit Information
+        id: commit_info
+        run: |
+          echo "📋 Extracting commit details..."
+          
+          # Get commit message
+          COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+          
+          # If empty, use default
+          if [ -z "$COMMIT_MESSAGE" ]; then
+            COMMIT_MESSAGE="Code merged to main in tester repository"
+          fi
+          
+          echo "commit_message=$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
+          echo ""
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Commit Message: $COMMIT_MESSAGE"
+          echo ""
+
+      # Step 4: Send repository_dispatch event
+      - name: Send Repository Dispatch to Development Repo
+        run: |
+          echo "📤 Preparing repository_dispatch event..."
+          echo ""
+          
+          # Set variables
+          DEV_OWNER="Priti6542"
+          DEV_REPO="BMP-Backend"
+          EVENT_TYPE="promote-to-staging"
+          COMMIT_SHA="${{ github.sha }}"
+          COMMIT_MESSAGE="${{ steps.commit_info.outputs.commit_message }}"
+          TESTER_REPO="${{ github.repository }}"
+          TRIGGERED_AT=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          
+          echo "Event Details:"
+          echo "  • Target: $DEV_OWNER/$DEV_REPO"
+          echo "  • Event Type: $EVENT_TYPE"
+          echo "  • Commit SHA: $COMMIT_SHA"
+          echo "  • Tester Repository: $TESTER_REPO"
+          echo "  • Triggered At: $TRIGGERED_AT"
+          echo ""
+          
+          # Prepare JSON payload
+          PAYLOAD=$(cat <<EOF
+          {
+            "event_type": "$EVENT_TYPE",
+            "client_payload": {
+              "tester_repo": "$TESTER_REPO",
+              "commit_sha": "$COMMIT_SHA",
+              "commit_message": "$COMMIT_MESSAGE",
+              "commit_author": "${{ github.actor }}",
+              "triggered_at": "$TRIGGERED_AT",
+              "repository_type": "backend"
+            }
+          }
+          EOF
+          )
+          
+          echo "🚀 Sending repository_dispatch event..."
+          echo ""
+          
+          # Send the dispatch event
+          HTTP_STATUS=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.DEV_REPO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$DEV_OWNER/$DEV_REPO/dispatches" \
+            -d "$PAYLOAD")
+          
+          RESPONSE=$(cat /tmp/response.txt)
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response: $RESPONSE"
+          echo ""
+          
+          # Check if successful (should return 204 No Content for success)
+          if [ "$HTTP_STATUS" = "204" ]; then
+            echo "✅ Repository dispatch event sent successfully!"
+            echo ""
+            echo "📨 Event Details:"
+            echo "   Event Type: $EVENT_TYPE"
+            echo "   Repository: $DEV_OWNER/$DEV_REPO"
+            echo "   Payload: Commit SHA + Message + Author"
+            echo ""
+            echo "⏳ The development repository will now:"
+            echo "   1. Receive the repository_dispatch event"
+            echo "   2. Start promote-to-staging.yml workflow"
+            echo "   3. Create PR from testing → staging"
+            echo "   4. Wait for manager approval"
+          else
+            echo "❌ Failed to send repository_dispatch event"
+            echo "HTTP Status: $HTTP_STATUS"
+            echo "Error Response: $RESPONSE"
+            exit 1
+          fi
+
+      # Step 5: Create summary
+      - name: Create Dispatch Summary
+        if: success()
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║                                                               ║"
+          echo "║  ✅ DISPATCH EVENT SENT SUCCESSFULLY                          ║"
+          echo "║                                                               ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║  📨 Event: repository_dispatch"
+          echo "║  📍 Type: promote-to-staging"
+          echo "║  🎯 Target: Priti6542/BMP-Backend"
+          echo "║  🔗 Source: ${{ github.repository }} (main)"
+          echo "║  ✍️  Commit: ${{ github.sha }}"
+          echo "║  👤 Triggered by: ${{ github.actor }}"
+          echo "║  ⏰ Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "║"
+          echo "║  Next Steps:"
+          echo "║  1. ⚙️  promote-to-staging.yml runs in development repo"
+          echo "║  2. 📝 Pull request created (testing → staging)"
+          echo "║  3. 👤 Manager reviews and approves"
+          echo "║  4. 🔀 Merge to staging branch"
+          echo "║"
+          echo "║  Monitor Progress:"
+          echo "║  • Go to: https://github.com/Priti6542/BMP-Backend/actions"
+          echo "║  • Look for: Promote Backend to Staging"
+          echo "║  • Check: Pull Requests tab for new PR"
+          echo "║"
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""
+
+      # Step 6: Handle errors
+      - name: Handle Dispatch Error
+        if: failure()
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║                                                               ║"
+          echo "║  ❌ REPOSITORY DISPATCH FAILED                                ║"
+          echo "║                                                               ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          echo "║"
+          echo "║  The promotion trigger could not send the event."
+          echo "║"
+          echo "║  Possible Causes:"
+          echo "║  1. DEV_REPO_TOKEN secret not configured"
+          echo "║  2. Token has expired or insufficient permissions"
+          echo "║  3. Development repository not accessible"
+          echo "║  4. Network connectivity issue"
+          echo "║"
+          echo "║  Resolution Steps:"
+          echo "║  1. Verify DEV_REPO_TOKEN in GitHub Secrets:"
+          echo "║     Settings → Secrets and variables → Actions"
+          echo "║  2. Check token has correct scopes:"
+          echo "║     • repo (full control of private repositories)"
+          echo "║     • workflow (update GitHub workflows)"
+          echo "║  3. Regenerate token if expired:"
+          echo "║     https://github.com/settings/tokens/new"
+          echo "║  4. Manual fallback:"
+          echo "║     • Go to development repository"
+          echo "║     • Manually create PR from testing to staging"
+          echo "║"
+          echo "║  Check logs above for specific error message."
+          echo "║"
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""
