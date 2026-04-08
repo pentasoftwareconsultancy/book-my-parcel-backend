@@ -1,4 +1,4 @@
-name: 06 Deploy Staging
+name: 06 Deploy Stage
 
 on:
   push:
@@ -20,8 +20,8 @@ jobs:
         with:
           ref: stage
 
-      - name: Deploy Staging to Render
+      - name: Deploy Stage to Render
         run: |
-          echo "🚀 Triggering Render deployment for staging..."
+          echo "🚀 Triggering Render deployment for stage..."
           curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
-          echo "✅ Staging deployment triggered successfully"
+          echo "✅ Stage deployment triggered successfully"

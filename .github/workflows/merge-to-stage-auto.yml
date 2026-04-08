@@ -1,21 +1,21 @@
-name: 08 Auto Merge to Production
+name: 05 Auto Merge to Stage
 
 on:
   pull_request:
     types: [opened, synchronize]
     branches:
-      - main
+      - stage
 
 jobs:
   merge:
-    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend' && github.event.pull_request.head.ref == 'stage'
+    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend' && github.event.pull_request.head.ref == 'testing'
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Auto-merge PR to Production
+      - name: Auto-merge PR to Stage
         run: |
           echo "⏳ Waiting 10 seconds before auto-merge..."
           sleep 10
@@ -25,7 +25,7 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls/${{ github.event.pull_request.number }}/merge \
             -d '{
-              "commit_title": "Merge stage → main: Production release",
-              "commit_message": "Auto-merged from stage branch to production",
+              "commit_title": "Merge testing → stage: Auto-merged",
+              "commit_message": "Auto-merged from testing branch",
               "merge_method": "squash"
             }'

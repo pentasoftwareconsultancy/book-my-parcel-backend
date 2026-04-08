@@ -1,9 +1,9 @@
-name: 07 Create Production PR
+name: 04 Create Stage PR
 
 on:
   push:
     branches:
-      - stage
+      - testing
     paths-ignore:
       - '**.md'
       - '.gitignore'
@@ -24,11 +24,11 @@ jobs:
         id: check-pr
         run: |
           EXISTING_PR=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls?state=open&head=pentasoftwareconsultancy:stage&base=main" \
+            "https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls?state=open&head=pentasoftwareconsultancy:testing&base=stage" \
             | jq 'length')
           echo "pr_count=$EXISTING_PR" >> $GITHUB_OUTPUT
 
-      - name: Create PR stage → main
+      - name: Create PR testing → stage
         if: steps.check-pr.outputs.pr_count == '0'
         run: |
           curl -X POST \
@@ -36,8 +36,8 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls \
             -d '{
-              "title": "Stage → Production: Auto-merge enabled",
-              "body": "This PR contains changes from the stage branch for production release.\n\n**Status:** Auto-merge enabled - will merge automatically after 10 seconds.\n\n**Workflow:**\n1. Review the changes if needed\n2. PR will auto-merge to main\n3. Deploy production workflow will trigger automatically",
-              "head": "stage",
-              "base": "main"
+              "title": "Testing → Stage: Auto-merge enabled",
+              "body": "This PR contains changes from the testing branch.\n\n**Status:** Auto-merge enabled - will merge automatically after 10 seconds.\n\n**Workflow:**\n1. Review the changes if needed\n2. PR will auto-merge to stage\n3. Deploy stage workflow will trigger automatically",
+              "head": "testing",
+              "base": "stage"
             }'
