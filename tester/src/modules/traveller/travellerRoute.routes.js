@@ -7,6 +7,8 @@ import {
   createRoute,
   getRoutes,
   getRoute,
+  updateRoute,
+  deleteRoute,
 } from "./travellerRoute.controller.js";
 
 const router = express.Router();
@@ -23,5 +25,11 @@ router.get("/", getRoutes);
 
 // GET /api/traveller/routes/:id - Get specific route by ID
 router.get("/:id", getRoute);
+
+// PUT /api/traveller/routes/:id - Update a route
+router.put("/:id", updateRoute);
+
+// DELETE /api/traveller/routes/:id - Delete a route
+router.delete("/:id", deleteRoute);
 
 export default router;
