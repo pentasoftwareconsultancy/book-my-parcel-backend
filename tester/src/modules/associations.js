@@ -29,6 +29,9 @@ import Refund from "../modules/payment/refund.model.js";
 /* TRACKING */
 import ParcelTracking from "../modules/tracking/parcelTracking.model.js";
 
+/* FEEDBACK */
+import Feedback from "../modules/feedback/feedback.model.js";
+
 /* ADDRESS */
 import Address from "./parcel/address.model.js";
 
@@ -279,7 +282,8 @@ export {
   RoutePlace,
   ParcelRequest,
   ParcelAcceptance,
-  UserDeviceToken
+  UserDeviceToken,
+  Feedback
 };
 
 
@@ -317,3 +321,29 @@ User.hasMany(ParcelAcceptance, { foreignKey: "traveller_id", as: "acceptedParcel
    =========================== */
 User.hasMany(UserDeviceToken, { foreignKey: "user_id", onDelete: "CASCADE", as: "deviceTokens" });
 UserDeviceToken.belongsTo(User, { foreignKey: "user_id", as: "user" });
+
+/* ===========================
+   FEEDBACK ASSOCIATIONS
+   =========================== */
+
+// Feedback ↔ Booking (1-1)
+// One booking can have at most one feedback (unique constraint on booking_id)
+// hasOne on Booking side means: "a booking has one feedback"
+Booking.hasOne(Feedback, { foreignKey: "booking_id", as: "feedback", onDelete: "CASCADE" });
+Feedback.belongsTo(Booking, { foreignKey: "booking_id", as: "booking" });
+
+// Feedback ↔ Parcel (N-1)
+// Many feedbacks could reference the same parcel (recurring scenario)
+// but in practice it's 1-1 since booking_id is unique
+Parcel.hasMany(Feedback, { foreignKey: "parcel_id", as: "feedbacks" });
+Feedback.belongsTo(Parcel, { foreignKey: "parcel_id", as: "parcel" });
+
+// Feedback ↔ TravellerProfile (N-1)
+// A traveller can receive many feedbacks over time
+TravellerProfile.hasMany(Feedback, { foreignKey: "traveller_id", as: "feedbacks" });
+Feedback.belongsTo(TravellerProfile, { foreignKey: "traveller_id", as: "travellerProfile" });
+
+// Feedback ↔ User (reviewer) (N-1)
+// A user can submit feedback for multiple deliveries
+User.hasMany(Feedback, { foreignKey: "user_id", as: "submittedFeedbacks" });
+Feedback.belongsTo(User, { foreignKey: "user_id", as: "reviewer" });

@@ -17,7 +17,7 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("✅ Connected to database");
 
-    await sequelize.sync({ force: false, alter: false });
+    await sequelize.sync({ force: true, alter: true });
     console.log("✅ Tables synced");
 
     await seedRoles();

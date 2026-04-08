@@ -1,5 +1,7 @@
 import express from "express";
 import authRoutes from "./modules/auth/auth.routes.js";
+import feedbackRoutes from "./modules/feedback/feedback.routes.js";
+import disputeRoutes from "./modules/dispute/disputes.routes.js";
 import adminRoutes from "./modules/admin/admin.routes.js";
 import parcelRoutes from "./modules/parcel/parcel.routes.js"
 import userRoutes from "./modules/user/user.routes.js";
@@ -13,7 +15,9 @@ import bookingRoutes from "./modules/booking/booking.routes.js";
 const router = express.Router();
 
 // Module routes
-router.use("/auth", authRoutes); // /api/auth/...
+router.use("/auth", authRoutes);
+router.use("/feedback", feedbackRoutes);
+router.use("/dispute", disputeRoutes);   // /api/dispute, /api/dispute/my
 router.use("/user", userRoutes); // /api/user/...
 router.use("/places", placesRoutes); // /api/places/autocomplete
 
