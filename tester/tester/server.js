@@ -1,4 +1,4 @@
-// CI/CD Test - v2.0 (2026-04-08) - Complete Pipeline Testing
+// CI/CD Test - v1.0 (2026-04-08)
 import dotenv from "dotenv";
 dotenv.config();
 import { createServer } from "http";
