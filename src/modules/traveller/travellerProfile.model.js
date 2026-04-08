@@ -19,23 +19,38 @@ const TravellerProfile = sequelize.define(
       },
       onDelete: "CASCADE",
     },
-
-
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    email: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    phone_number: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    vehicle_type: DataTypes.STRING,
+    vehicle_type: DataTypes.STRING,   // bike, car, truck
+    vehicle_number: DataTypes.STRING,
+    vehicle_model: DataTypes.STRING,
     capacity_kg: DataTypes.INTEGER,
-    status: DataTypes.STRING,
+    rating: {
+      type: DataTypes.DECIMAL(2, 1),
+      defaultValue: 4.8,
+      validate: {
+        min: 0,
+        max: 5
+      }
+    },
+    total_deliveries: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      validate: {
+        min: 0
+      }
+    },
+    profile_photo: DataTypes.STRING,
+    status: {
+      type: DataTypes.ENUM("INCOMPLETE", "PENDING", "ACTIVE", "INACTIVE"),
+      defaultValue: "INCOMPLETE",
+    },
+    is_available: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    last_known_location: {
+      type: DataTypes.GEOMETRY('POINT'),
+      allowNull: true,
+    },
   },
   { timestamps: true }
 );

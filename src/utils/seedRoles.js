@@ -1,6 +1,6 @@
 // src/utils/seedRoles.js
 import Role from "../modules/user/role.model.js";
-import { ROLES } from "../middlewares/role.middleware.js";
+import { ROLES } from "./constants.js";
 
 export async function seedRoles() {
   for (const roleName of Object.values(ROLES)) {

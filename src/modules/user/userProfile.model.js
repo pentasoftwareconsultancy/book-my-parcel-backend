@@ -13,14 +13,15 @@ const UserProfile = sequelize.define(
       type: DataTypes.UUID,
       allowNull: false,
     },
-    full_name: DataTypes.STRING,
+    name: DataTypes.STRING,
     address: DataTypes.TEXT,
     city: DataTypes.STRING,
     state: DataTypes.STRING,
-    alternate_phone: DataTypes.STRING,
-    
-     lat: DataTypes.DECIMAL,
+    pincode: DataTypes.STRING,  
+    lat: DataTypes.DECIMAL,
     lng: DataTypes.DECIMAL,
+    avatar_url: DataTypes.STRING,
+
   },
   { timestamps: true }
 );
