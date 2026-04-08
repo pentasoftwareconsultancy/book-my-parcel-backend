@@ -60,8 +60,16 @@ export async function getPlaceDetails(placeId) {
 }
 
 // ─── Routes API (Essentials) ─────────────────────────────────────────────────
-export async function computeRoute(originLatLng, destLatLng) {
+export async function computeRoute(originLatLng, destLatLng, travelMode = "DRIVE") {
   const url = `https://routes.googleapis.com/directions/v2:computeRoutes?key=${GOOGLE_API_KEY}`;
+  
+  // For TRANSIT mode, we need different field mask to include transitDetails
+  let fieldMask = "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction";
+  
+  if (travelMode === "TRANSIT") {
+    fieldMask = "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.transitDetails";
+  }
+  
   const payload = {
     origin: {
       location: {
@@ -79,23 +87,29 @@ export async function computeRoute(originLatLng, destLatLng) {
         },
       },
     },
-    travelMode: "DRIVE",
-    routingPreference: "TRAFFIC_UNAWARE",
+    travelMode: travelMode, // "DRIVE" or "TRANSIT"
     computeAlternativeRoutes: false,
-    routeModifiers: {
-      avoidTolls: false,
-      avoidHighways: false,
-      avoidFerries: false,
-    },
     languageCode: "en-IN",
     units: "METRIC",
   };
+  
+  // Only set routing preference and modifiers for DRIVE mode
+  // TRANSIT mode doesn't support these options
+  if (travelMode === "DRIVE") {
+    payload.routingPreference = "TRAFFIC_UNAWARE";
+    payload.routeModifiers = {
+      avoidTolls: false,
+      avoidHighways: false,
+      avoidFerries: false,
+    };
+  }
+  
   const response = await axios.post(url, payload, {
     headers: {
-      "X-Goog-FieldMask":
-        "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction",
+      "X-Goog-FieldMask": fieldMask,
     },
   });
+  
   return response.data;
 }
 

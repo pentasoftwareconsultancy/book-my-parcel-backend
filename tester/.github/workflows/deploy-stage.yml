@@ -1,0 +1,27 @@
+name: 06 Deploy Stage
+
+on:
+  push:
+    branches:
+      - stage
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  deploy:
+    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: stage
+
+      - name: Deploy Stage to Render
+        run: |
+          echo "🚀 Triggering Render deployment for stage..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
+          echo "✅ Stage deployment triggered successfully"
