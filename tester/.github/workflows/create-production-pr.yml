@@ -24,11 +24,11 @@ jobs:
         id: check-pr
         run: |
           EXISTING_PR=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls?state=open&head=pentasoftwareconsultancy:staging&base=main" \
+            "https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls?state=open&head=pentasoftwareconsultancy:stage&base=main" \
             | jq 'length')
           echo "pr_count=$EXISTING_PR" >> $GITHUB_OUTPUT
 
-      - name: Create PR staging → main
+      - name: Create PR stage → main
         if: steps.check-pr.outputs.pr_count == '0'
         run: |
           curl -X POST \
