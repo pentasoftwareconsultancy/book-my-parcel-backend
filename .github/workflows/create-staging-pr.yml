@@ -1,0 +1,43 @@
+name: 04 Create Staging PR
+
+on:
+  push:
+    branches:
+      - testing
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  create-pr:
+    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if PR already exists
+        id: check-pr
+        run: |
+          EXISTING_PR=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls?state=open&head=pentasoftwareconsultancy:testing&base=stage" \
+            | jq 'length')
+          echo "pr_count=$EXISTING_PR" >> $GITHUB_OUTPUT
+
+      - name: Create PR testing → staging
+        if: steps.check-pr.outputs.pr_count == '0'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls \
+            -d '{
+              "title": "Testing → Stage: Auto-merge enabled",
+              "body": "This PR contains changes from the testing branch.\n\n**Status:** Auto-merge enabled - will merge automatically after 10 seconds.\n\n**Workflow:**\n1. Review the changes if needed\n2. PR will auto-merge to stage\n3. Deploy stage workflow will trigger automatically",
+              "head": "testing",
+              "base": "stage"
+            }'
