@@ -108,6 +108,21 @@ class BookingController {
       return responseError(res, error.message, 400);
     }
   }
+
+  // POST /api/booking/:bookingId/receive-payment (Pay After Delivery payment reception)
+  async receivePayment(req, res) {
+    try {
+      const { bookingId } = req.params;
+      const travellerId = req.user.id;
+
+      const result = await bookingService.receivePayment(bookingId, travellerId);
+
+      return responseSuccess(res, result, "Payment received successfully");
+    } catch (error) {
+      console.error("Error in receivePayment:", error);
+      return responseError(res, error.message, 400);
+    }
+  }
 }
 
 export default new BookingController();

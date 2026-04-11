@@ -9,6 +9,9 @@ import app from "../../app.js";
 import ParcelTracking from "../tracking/parcelTracking.model.js";
 import TravellerTrip from "../traveller/travellerTrip.model.js";
 import TravellerRoute from "../traveller/travellerRoute.model.js";
+import { creditWalletService } from "../payment/wallet.service.js";
+import PendingPayment from "./pendingPayment.model.js";
+import { createNotification } from "../notification/notification.service.js";
 
 
 class BookingService {
@@ -342,6 +345,27 @@ class BookingService {
       console.log(`[WebSocket] Emitted pickup_verified to ${travellerRoom}`);
     }
 
+    // ── Persist notifications ──────────────────────────────────────────────
+    const io2 = this.getIO();
+    // Notify user: parcel picked up
+    await createNotification(io2, {
+      user_id:   booking.parcel.user_id,
+      role:      "user",
+      type_code: "parcel_picked_up",
+      title:     "Parcel Picked Up",
+      message:   `Your parcel has been picked up by the traveller. Booking ref: ${booking.booking_ref}`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+    // Notify traveller: delivery started
+    await createNotification(io2, {
+      user_id:   travellerId,
+      role:      "traveller",
+      type_code: "delivery_started",
+      title:     "Pickup Verified",
+      message:   `Pickup verified for booking ${booking.booking_ref}. Head to the delivery address.`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+
     return {
       booking_id: booking.id,
       status: "IN_TRANSIT",
@@ -510,16 +534,75 @@ class BookingService {
       throw error;
     }
 
-    // OTP is correct - update status to DELIVERED
-    await booking.update({
-      status: "DELIVERED",
-      delivery_otp: null, // Clear OTP for security
-      delivered_at: new Date(),
-      delivery_otp_attempts: 0,
-    });
+    // OTP is correct - set status based on payment mode
+    const paymentMode = booking.payment_mode || "PAY_NOW";
+    let finalStatus = "DELIVERED";
+    
+    console.log(`[verifyDelivery] Payment mode: ${paymentMode}, Amount: ${booking.parcel?.price_quote || 0}`);
+    
+    if (paymentMode === "PAY_NOW") {
+      // PAY NOW: Update status to DELIVERED immediately
+      finalStatus = "DELIVERED";
+      await booking.update({
+        status: "DELIVERED",
+        delivery_otp: null,
+        delivered_at: new Date(),
+        delivery_otp_attempts: 0,
+      });
+      console.log(`[verifyDelivery] Status set to DELIVERED for PAY_NOW delivery`);
+    } else {
+      // PAY AFTER DELIVERY: Update status to PAYMENT_PENDING (waiting for payment)
+      finalStatus = "PAYMENT_PENDING";
+      await booking.update({
+        status: "PAYMENT_PENDING",
+        delivery_otp: null,
+        delivered_at: new Date(),
+        delivery_otp_attempts: 0,
+      });
+      console.log(`[verifyDelivery] Status set to PAYMENT_PENDING for PAY_AFTER_DELIVERY delivery`);
+    }
 
-    // TODO: Release payment to traveller wallet
-    // TODO: Update traveller's total_deliveries count
+    // ✅ Handle Payment Based on Payment Mode - use paymentMode variable for consistency
+    try {
+      const amount = booking.parcel?.price_quote || 0;
+      
+      if (amount > 0 && booking.traveller_id) {
+        if (paymentMode === "PAY_NOW") {
+          // PAY NOW: Credit wallet immediately
+          console.log(`[verifyDelivery] Attempting to credit wallet for PAY_NOW: Amount ₹${amount}, Traveller ${booking.traveller_id}`);
+          const walletResult = await creditWalletService(
+            booking.traveller_id,
+            amount,
+            `Delivery payment for booking ${booking.booking_ref}`
+          );
+          console.log(
+            `✅ [Pay Now] ₹${amount} credited to traveller ${booking.traveller_id}. New balance: ₹${walletResult.newBalance}`
+          );
+        } else if (paymentMode === "PAY_AFTER_DELIVERY") {
+          // PAY AFTER DELIVERY: Create pending payment record
+          console.log(`[verifyDelivery] Creating pending payment for PAY_AFTER_DELIVERY: Amount ₹${amount}, Traveller ${booking.traveller_id}`);
+          const PendingPayment = (await import("./pendingPayment.model.js")).default;
+          await PendingPayment.create({
+            booking_id: booking.id,
+            traveller_id: booking.traveller_id,
+            amount: amount,
+            delivery_ref: booking.delivery_ref,
+            status: "PENDING_RECEIPT",
+          });
+          console.log(
+            `✅ [Pay After Delivery] ₹${amount} pending receipt for traveller ${booking.traveller_id}`
+          );
+        }
+      } else {
+        console.warn(`[verifyDelivery] Payment not processed: Amount=${amount}, TravellerId=${booking.traveller_id}`);
+      }
+    } catch (paymentError) {
+      console.error(
+        "❌ [Delivery Payment] Failed to process payment:",
+        paymentError.message
+      );
+      // Don't fail the delivery confirmation if payment processing fails - log and continue
+    }
 
     // Send delivery confirmation SMS to sender
     try {
@@ -549,9 +632,11 @@ class BookingService {
     if (io) {
       const eventData = {
         booking_id: booking.id,
-        status: "DELIVERED",
+        status: finalStatus,
+        payment_mode: paymentMode,
         delivered_at: booking.delivered_at,
-      };
+      };  
+      console.log(`[verifyDelivery] Emitting WebSocket event with status: ${finalStatus}`);
       
       // Log room information for debugging
       const senderRoom = `user_${senderId}`;
@@ -572,10 +657,32 @@ class BookingService {
       console.log(`[WebSocket] Emitted delivery_verified to ${travellerRoom}`);
     }
 
+    // ── Persist notifications ──────────────────────────────────────────────
+    const io2 = this.getIO();
+    // Notify user: parcel delivered
+    await createNotification(io2, {
+      user_id:   booking.parcel.user_id,
+      role:      "user",
+      type_code: "parcel_delivered",
+      title:     "Parcel Delivered Successfully",
+      message:   `Your parcel has been delivered successfully. Booking ref: ${booking.booking_ref}`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+    // Notify traveller: delivery completed + payment
+    await createNotification(io2, {
+      user_id:   travellerId,
+      role:      "traveller",
+      type_code: "delivery_completed",
+      title:     "Delivery Completed",
+      message:   `You successfully delivered parcel ${booking.booking_ref}. Great job!`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+
     return {
       booking_id: booking.id,
-      status: "DELIVERED",
-      message: "Delivery completed successfully!",
+      status: finalStatus,
+      payment_mode: paymentMode,
+      message: finalStatus === "PAYMENT_PENDING" ? "Delivery verified. Awaiting payment receipt." : "Delivery completed successfully!",
       delivered_at: booking.delivered_at,
       // earnings: 500, // TODO: Calculate from booking
     };
@@ -653,6 +760,17 @@ class BookingService {
       console.log(`[WebSocket] Emitted booking_cancelled to traveller ${travellerRoom}`);
     }
 
+    // ── Persist notifications ──────────────────────────────────────────────
+    const io2 = this.getIO();
+    await createNotification(io2, {
+      user_id:   booking.parcel.user_id,
+      role:      "user",
+      type_code: "booking_cancelled",
+      title:     "Booking Cancelled",
+      message:   `Your booking ${booking.booking_ref} has been cancelled by the traveller.`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref, reason },
+    });
+
     return {
       success: true,
       booking_id: booking.id,
@@ -661,6 +779,82 @@ class BookingService {
       message: "Booking cancelled successfully",
       cancelled_at: new Date(),
     };
+  }
+
+  // POST /api/booking/:bookingId/receive-payment (Traveller receives payment after delivery)
+  async receivePayment(bookingId, travellerId) {
+    try {
+      // Find the booking
+      const booking = await Booking.findByPk(bookingId, {
+        include: [{ model: Parcel, as: "parcel" }],
+      });
+
+      if (!booking) {
+        throw new Error("Booking not found");
+      }
+
+      if (booking.traveller_id !== travellerId) {
+        throw new Error("Unauthorized: You don't own this booking");
+      }
+
+      if (booking.status !== "PAYMENT_PENDING") {
+        throw new Error(`Invalid status: Expected PAYMENT_PENDING, got ${booking.status}`);
+      }
+
+      if (booking.payment_mode !== "PAY_AFTER_DELIVERY") {
+        throw new Error("This booking is not in Pay After Delivery mode");
+      }
+
+      // Find pending payment record
+      const pendingPayment = await PendingPayment.findOne({
+        where: {
+          booking_id: bookingId,
+          traveller_id: travellerId,
+          status: "PENDING_RECEIPT",
+        },
+      });
+
+      if (!pendingPayment) {
+        throw new Error("No pending payment found for this booking");
+      }
+
+      const amount = pendingPayment.amount;
+
+      // ✅ PAY_AFTER_DELIVERY: Do NOT credit wallet
+      // Money stays with sender/system, not added to traveller wallet
+      // Mark payment as received for record-keeping only
+
+      // Update pending payment status to RECEIVED
+      await pendingPayment.update({
+        status: "RECEIVED",
+        received_at: new Date(),
+      });
+
+      // ✅ Update booking status from PAYMENT_PENDING to DELIVERED
+      await booking.update({
+        status: "DELIVERED",
+      });
+
+      console.log(
+        `✅ [Payment Received] Payment ₹${amount} marked as received for traveller ${travellerId} for booking ${booking.booking_ref}`
+      );
+      console.log(
+        `✅ [Booking Delivered] Booking ${booking.booking_ref} status updated to DELIVERED`
+      );
+
+      return {
+        success: true,
+        booking_id: booking.id,
+        booking_ref: booking.booking_ref,
+        amount: amount,
+        status: "RECEIVED",
+        message: `Payment ₹${amount} received. Amount stays with payment system (cash/UPI).`,
+        received_at: new Date(),
+      };
+    } catch (error) {
+      console.error("❌ Error in receivePayment:", error.message);
+      throw error;
+    }
   }
 }
 

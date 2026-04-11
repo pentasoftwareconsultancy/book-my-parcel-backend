@@ -58,6 +58,12 @@ const Payment = sequelize.define(
       defaultValue: PAYMENT_STATUS.PENDING,
     },
 
+    released_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Set when payment is released to traveller wallet",
+    },
+
   },
   {
     timestamps: true,

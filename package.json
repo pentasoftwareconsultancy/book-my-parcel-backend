@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "nodemon server.js",
-    "test:fixes": "node --experimental-modules tests/publicTransportFixes.test.js"
+    "test:fixes": "node --experimental-modules tests/publicTransportFixes.test.js",
+    "seed": "node scripts/seedTestData.js",
+    "seed:pay-after-delivery": "node scripts/seedPayAfterDeliveryTest.js"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +18,7 @@
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.73.2",
     "chalk": "^5.6.2",
     "cors": "^2.8.6",
     "crypto": "^1.0.1",
@@ -25,6 +28,7 @@
     "express-validator": "^7.3.1",
     "firebase-admin": "^13.7.0",
     "fs": "^0.0.1-security",
+    "ioredis": "^5.10.1",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",

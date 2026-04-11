@@ -36,6 +36,12 @@ const User = sequelize.define(
   },
   {
     timestamps: true,
+    indexes: [
+      { name: "idx_users_created_at",    fields: ["createdAt"] },
+      // phone_number already has unique: true which creates an index automatically
+      // adding explicit index for non-unique lookup patterns
+      { name: "idx_users_phone_number",  fields: ["phone_number"] },
+    ],
   }
 
 );

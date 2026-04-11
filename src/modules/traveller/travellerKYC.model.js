@@ -34,6 +34,12 @@ const TravellerKYC = sequelize.define(
     ifsc: DataTypes.STRING,
     bank_name: DataTypes.STRING,
 
+    bank_verified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: "Set to true when admin verifies bank details after KYC approval"
+    },
+
     // status: {
     //   type: DataTypes.ENUM("NOT_STARTED","PENDING","APPROVED","REJECTED"),
     //   defaultValue: "PENDING"
@@ -46,7 +52,11 @@ const TravellerKYC = sequelize.define(
 
 
   },
-  { timestamps: true, underscored: true }
+  { timestamps: true, underscored: true, indexes: [
+    { name: "idx_traveller_kyc_user_id",    fields: ["user_id"] },
+    { name: "idx_traveller_kyc_status",     fields: ["status"] },
+    { name: "idx_traveller_kyc_created_at", fields: ["created_at"] },
+  ]}
 );
 
 TravellerKYC.addHook('beforeCreate', (instance) => {

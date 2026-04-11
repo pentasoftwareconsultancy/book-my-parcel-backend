@@ -1,4 +1,4 @@
-// CI/CD Test - v2.0 (2026-04-08) - Complete Pipeline Testing
+// CI/CD Test - v1.0 (2026-04-08)
 import dotenv from "dotenv";
 dotenv.config();
 import { createServer } from "http";
@@ -17,7 +17,7 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("✅ Connected to database");
 
-    await sequelize.sync({ force: true, alter: true });
+    await sequelize.sync({ force: false, alter: false });
     console.log("✅ Tables synced");
 
     await seedRoles();
@@ -38,11 +38,12 @@ const startServer = async () => {
 
     // Make io accessible in controllers via req.app.get("io")
     app.set("io", io);
+    
 
     // All socket event handlers live here
     setupSocketHandlers(io);
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
       console.log(`\n${"=".repeat(60)}`);
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🔌 WebSocket server ready`);

@@ -7,6 +7,7 @@ import {
   submitFeedbackController,
   getBookingFeedbackController,
   getTravellerFeedbackController,
+  updateFeedbackController,
 } from "./feedback.controller.js";
 
 const router = express.Router();
@@ -18,6 +19,9 @@ router.post("/submit", authMiddleware, submitFeedbackController);
 
 // Used by frontend to check if feedback already exists for a booking
 router.get("/booking/:bookingId", authMiddleware, getBookingFeedbackController);
+
+// Update existing feedback (edit mode)
+router.put("/booking/:bookingId", authMiddleware, updateFeedbackController);
 
 // GET /api/feedback/traveller/:travellerId
 // Public — anyone can view a traveller's reviews (no auth required)

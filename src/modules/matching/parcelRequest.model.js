@@ -66,11 +66,14 @@ const ParcelRequest = sequelize.define(
     timestamps: true,
     underscored: true,
     indexes: [
-      { name: "idx_parcel_requests_parcel_id", fields: ["parcel_id"] },
-      { name: "idx_parcel_requests_traveller_id", fields: ["traveller_id"] },
-      { name: "idx_parcel_requests_status", fields: ["status"] },
-      { name: "idx_parcel_requests_expires_at", fields: ["expires_at"] },
-      { name: "idx_parcel_requests_route_id", fields: ["route_id"] },
+      { name: "idx_parcel_requests_parcel_id",                  fields: ["parcel_id"] },
+      { name: "idx_parcel_requests_traveller_id",               fields: ["traveller_id"] },
+      { name: "idx_parcel_requests_status",                     fields: ["status"] },
+      { name: "idx_parcel_requests_expires_at",                 fields: ["expires_at"] },
+      { name: "idx_parcel_requests_route_id",                   fields: ["route_id"] },
+      // composite: covers fetchTravellerParcelRequests fully
+      // WHERE traveller_id = ? AND status IN (...) ORDER BY created_at DESC
+      { name: "idx_parcel_requests_traveller_status_created",   fields: ["traveller_id", "status", "created_at"] },
     ],
   }
 );

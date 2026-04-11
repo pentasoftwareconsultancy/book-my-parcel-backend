@@ -9,6 +9,10 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://127.0.0.1:5173",
+  "http://172.17.208.1:5173",
+  "http://192.168.1.110:5173",
+  "http://172.17.208.1:5174",
+  "http://192.168.1.110:5174",
   "https://book-my-parcel-frontend.vercel.app",
   "https://book-my-parcel-frontend.vercel.app",
   "https://book-my-parcel-fr-git-e20a48-pentasoftwareconsultancys-projects.vercel.app"

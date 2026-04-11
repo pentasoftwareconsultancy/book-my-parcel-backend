@@ -19,6 +19,7 @@ import ParcelProof from "../modules/parcel/parcelProof.model.js";
 /* BOOKING */
 import Booking from "../modules/booking/booking.model.js";
 import BookingStatusLog from "../modules/booking/bookingStatusLog.model.js";
+import PendingPayment from "../modules/booking/pendingPayment.model.js";
 
 /* PAYMENT */
 import Payment from "../modules/payment/payment.model.js";
@@ -31,6 +32,11 @@ import ParcelTracking from "../modules/tracking/parcelTracking.model.js";
 
 /* FEEDBACK */
 import Feedback from "../modules/feedback/feedback.model.js";
+
+/* DISPUTE */
+import Dispute from "../modules/dispute/disputes.model.js";
+/* NOTIFICATION */
+import Notification from "./notification/notification.model.js";
 
 /* ADDRESS */
 import Address from "./parcel/address.model.js";
@@ -152,6 +158,20 @@ Booking.hasMany(BookingStatusLog, {
 });
 BookingStatusLog.belongsTo(Booking, {
   foreignKey: "booking_id",
+});
+
+
+/* ===========================
+   BOOKING ↔ PENDING PAYMENT (1–N)
+   =========================== */
+Booking.hasMany(PendingPayment, {
+  foreignKey: "booking_id",
+  onDelete: "CASCADE",
+  as: "pendingPayments",
+});
+PendingPayment.belongsTo(Booking, {
+  foreignKey: "booking_id",
+  as: "booking",
 });
 
 
@@ -283,7 +303,9 @@ export {
   ParcelRequest,
   ParcelAcceptance,
   UserDeviceToken,
-  Feedback
+  Feedback,
+  Notification,
+  Dispute,
 };
 
 
@@ -347,3 +369,20 @@ Feedback.belongsTo(TravellerProfile, { foreignKey: "traveller_id", as: "travelle
 // A user can submit feedback for multiple deliveries
 User.hasMany(Feedback, { foreignKey: "user_id", as: "submittedFeedbacks" });
 Feedback.belongsTo(User, { foreignKey: "user_id", as: "reviewer" });
+
+/* ===========================
+   USER ↔ NOTIFICATIONS (1–N)
+   =========================== */
+User.hasMany(Notification, { foreignKey: "user_id", onDelete: "CASCADE", as: "notifications" });
+Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
+
+/* ===========================
+   DISPUTE ASSOCIATIONS (1–N)
+   =========================== */
+// Dispute ↔ Booking (N-1)
+Dispute.belongsTo(Booking, { foreignKey: "booking_id", as: "booking" });
+Booking.hasMany(Dispute, { foreignKey: "booking_id", as: "disputes", onDelete: "CASCADE" });
+
+// Dispute ↔ User (raised_by) (N-1)
+Dispute.belongsTo(User, { foreignKey: "raised_by", as: "raisedBy" });
+User.hasMany(Dispute, { foreignKey: "raised_by", as: "raisedDisputes", onDelete: "CASCADE" });

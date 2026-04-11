@@ -53,12 +53,11 @@ const Feedback = sequelize.define(
       },
     },
 
-    // tags: {
-    //   type: DataTypes.JSONB,
-    //   allowNull: true,
-    //   // Stores array like ["On Time", "Friendly"] as binary JSON
-    //   // JSONB is indexable and faster than plain JSON in PostgreSQL
-    // },
+    tags: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: [],
+    },
 
     comment: {
       type: DataTypes.TEXT,

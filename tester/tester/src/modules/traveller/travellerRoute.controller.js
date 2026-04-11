@@ -2,6 +2,8 @@ import {
   createTravellerRoute,
   getTravellerRoutes,
   getRouteById,
+  updateTravellerRoute,
+  deleteTravellerRoute,
 } from "./travellerRoute.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
 import { matchRouteWithExistingParcels } from "../../services/matchingEngine.service.js";
@@ -46,6 +48,8 @@ export async function createRoute(req, res) {
       recurring_end_date: route.recurring_end_date,
       vehicle_type: route.vehicle_type,
       vehicle_number: route.vehicle_number,
+      transport_mode: route.transport_mode,
+      stops_passed: route.stops_passed,
       max_weight_kg: route.max_weight_kg,
       available_capacity_kg: route.available_capacity_kg,
       accepted_parcel_types: route.accepted_parcel_types,
@@ -93,5 +97,33 @@ export async function getRoute(req, res) {
   } catch (error) {
     console.error("[TravellerRoute] Get route error:", error);
     return responseError(res, error.message, 500);
+  }
+}
+
+// Update a specific route by ID
+export async function updateRoute(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const route = await updateTravellerRoute(id, userId, req.body);
+    return responseSuccess(res, route, "Route updated successfully");
+  } catch (error) {
+    console.error("[TravellerRoute] Update route error:", error);
+    const status = error.message.includes("not found") || error.message.includes("unauthorized") ? 404 : 500;
+    return responseError(res, error.message, status);
+  }
+}
+
+// Delete a specific route by ID
+export async function deleteRoute(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const result = await deleteTravellerRoute(id, userId);
+    return responseSuccess(res, result, result.message);
+  } catch (error) {
+    console.error("[TravellerRoute] Delete route error:", error);
+    const status = error.message.includes("not found") || error.message.includes("unauthorized") ? 404 : 500;
+    return responseError(res, error.message, status);
   }
 }
