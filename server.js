@@ -38,11 +38,12 @@ const startServer = async () => {
 
     // Make io accessible in controllers via req.app.get("io")
     app.set("io", io);
+    
 
     // All socket event handlers live here
     setupSocketHandlers(io);
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
       console.log(`\n${"=".repeat(60)}`);
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🔌 WebSocket server ready`);

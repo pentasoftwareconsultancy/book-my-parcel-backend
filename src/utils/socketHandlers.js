@@ -141,3 +141,8 @@ export function emitBookingEvent(io, bookingId, event, data) {
   io.to(`booking_${bookingId}`).emit(event, data);
   console.log(`[Socket] Emitted ${event} to booking_${bookingId}`);
 }
+
+export function emitNotification(io, userId, notification) {
+  io.to(`user_${userId}`).emit("new_notification", notification);
+  console.log(`[Socket] Emitted new_notification to user_${userId}`);
+}

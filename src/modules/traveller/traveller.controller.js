@@ -1,6 +1,6 @@
 
 import * as travellerService from "./traveller.service.js";
-import { responseSuccess } from "../../utils/response.util.js";
+import { responseSuccess, responseError } from "../../utils/response.util.js";
 
 /* ─────────────────────────────
    SUBMIT KYC
@@ -37,8 +37,8 @@ export const getMyKYC = async (req, res, next) => {
 ───────────────────────────── */
 export const getAllKYCs = async (req, res, next) => {
   try {
-    const data = await travellerService.getAllKYCs();
-    return responseSuccess(res, { count: data.length, kycs: data }, "All KYCs fetched");
+    const data = await travellerService.getAllKYCs(req.query);
+    return responseSuccess(res, data, "All KYCs fetched");
   } catch (err) {
     next(err);
   }
@@ -89,6 +89,33 @@ export const getTravelerStats = async (req, res, next) => {
     return responseSuccess(res, { stats }, "Stats fetched successfully");
   } catch (error) {
     console.error("getTravelerStats ERROR:", error.message);
+    next(error);
+  }
+};
+
+
+/* ─────────────────────────────
+   GET TRAVELLER BOOKING DETAILS  ✅
+───────────────────────────── */
+export const getTravelerBookingDetails = async (req, res, next) => {
+  try {
+    const travellerUserId = req.user.id;
+    const bookingId = req.params.bookingId;
+
+    if (!bookingId) {
+      return responseError(res, "Booking ID is required", 400);
+    }
+
+    const data = await travellerService.fetchTravellerBookingDetails(
+      travellerUserId,
+      bookingId
+    );
+    return responseSuccess(res, data, "Booking details fetched successfully");
+  } catch (error) {
+    console.error("getTravelerBookingDetails ERROR:", error.message);
+    if (error.message === "Booking not found or not assigned to this traveller") {
+      return responseError(res, error.message, 404);
+    }
     next(error);
   }
 };
@@ -240,5 +267,19 @@ export const deleteRoute = async (req, res, next) => {
     return responseSuccess(res, null, "Route deleted successfully");
   } catch (err) {
     next(err);
+  }
+};
+
+
+/* ─────────────────────────────
+   GET PENDING PAY-AFTER-DELIVERY PAYMENTS ✅
+───────────────────────────── */
+export const getPendingPayments = async (req, res, next) => {
+  try {
+    const data = await travellerService.fetchPendingPayments(req.user.id);
+    return responseSuccess(res, { pendingPayments: data }, "Pending payments fetched successfully");
+  } catch (error) {
+    console.error("getPendingPayments ERROR:", error.message);
+    next(error);
   }
 };

@@ -65,7 +65,13 @@ const Parcel = sequelize.define(
       defaultValue: "CREATED",
     },
   },
-  { freezeTableName: true, timestamps: true },
+  { freezeTableName: true, timestamps: true, indexes: [
+    { name: "idx_parcels_user_id",              fields: ["user_id"] },
+    // composite: covers WHERE user_id = ? ORDER BY createdAt DESC in one seek
+    { name: "idx_parcels_user_id_created",      fields: ["user_id", "createdAt"] },
+    { name: "idx_parcels_status",               fields: ["status"] },
+    { name: "idx_parcels_selected_partner_id",  fields: ["selected_partner_id"] },
+  ]},
 );
 
 export default Parcel;

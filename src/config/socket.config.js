@@ -13,7 +13,9 @@ export function initSocket(httpServer) {
 
     // Both traveller + individual join the same room by booking_id
     socket.on("join_tracking", ({ booking_id }) => {
-      socket.join(booking_id);
+      const room = `booking_${booking_id}`;
+
+  socket.join(room);
       console.log(`Socket ${socket.id} joined room: ${booking_id}`);
     });
 

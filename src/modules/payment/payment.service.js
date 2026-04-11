@@ -104,7 +104,8 @@ export const createOrderService = async (
 /* ================= VERIFY PAYMENT ================= */
 
 export const verifyPaymentService = async (
-  data
+  data,
+  req = null
 ) => {
 
   try {
@@ -164,18 +165,68 @@ export const verifyPaymentService = async (
         );
       }
 
-      await Booking.create({
+      // Generate booking ID for Pay Now flow
+      const { generateBookingId } = await import("../../utils/idGenerator.js");
+      const bookingRef = await generateBookingId();
 
-        user_id:
-          parcel.user_id,
+      const selectedPartnerId = parcel.selected_partner_id;
+
+      if (!selectedPartnerId) {
+        console.warn(`⚠️ [verifyPaymentService] No traveller ID provided for booking creation!`);
+        console.warn(`   - parcel.selected_partner_id: ${selectedPartnerId}`);
+      }
+
+      const booking = await Booking.create({
 
         parcel_id:
           parcel.id,
 
+        traveller_id:
+          selectedPartnerId,
+
         status:
-          BOOKING_STATUS.CONFIRMED
+          BOOKING_STATUS.CONFIRMED,
+
+        booking_ref:
+          bookingRef,
+
+        tracking_ref:
+          null,
+
+        payment_mode:
+          'PAY_NOW'
 
       });
+
+      console.log(`[verifyPaymentService] Booking created with ID: ${bookingRef} for traveller: ${selectedPartnerId}`);
+
+      // ✅ Emit WebSocket events when booking is confirmed (Pay Now flow)
+      if (selectedPartnerId && req?.app?.get("io")) {
+        const io = req.app.get("io");
+        
+        console.log('🔌 Emitting WebSocket events for Pay Now booking confirmation (after payment):', {
+          parcelId: parcel.id,
+          bookingId: booking.id,
+          bookingRef: booking.booking_ref,
+          travellerId: selectedPartnerId
+        });
+        
+        // Emit booking confirmation to selected traveller
+        const bookingConfirmedData = {
+          booking_id: booking.id,
+          booking_ref: booking.booking_ref,
+          parcel_id: parcel.id,
+          parcel_uuid: parcel.id,
+          parcel_ref: parcel.parcel_ref,
+          final_price: parcel.price_quote,
+          status: "CONFIRMED",
+          payment_mode: booking.payment_mode,
+          message: "Booking confirmed! Payment received. Proceed to pickup."
+        };
+        
+        io.to(`traveller_requests_${selectedPartnerId}`).emit("booking_confirmed", bookingConfirmedData);
+        console.log(`🔌 Emitted booking_confirmed to room traveller_requests_${selectedPartnerId}`, bookingConfirmedData);
+      }
 
       return {
         success: true

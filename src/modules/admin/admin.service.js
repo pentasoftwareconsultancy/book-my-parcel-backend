@@ -116,10 +116,29 @@ export const getAllBookings = async ({ page = 1, limit = 10 }) => {
     LIMIT :limit OFFSET :offset
   `;
 
-  return await sequelize.query(query, {
+  const bookings = await sequelize.query(query, {
     type: QueryTypes.SELECT,
     replacements: { limit, offset },
   });
+
+  const countResult = await sequelize.query(
+    `SELECT COUNT(*) AS total FROM bookings b
+     JOIN users u ON u.id = b.user_id
+     JOIN parcels p ON p.id = b.parcel_id`,
+    { type: QueryTypes.SELECT }
+  );
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    bookings,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit),
+    },
+  };
 };
 
 /**
@@ -231,10 +250,16 @@ export const updateTravelerKYCStatus = async (kycId, status) => {
 
 // -------------------------------------- admin overview dashboard ----------------------------------------
 
-export const getRecentBookingsService = async () => {
-  const bookings = await Booking.findAll({
+export const getRecentBookingsService = async (params = {}) => {
+  const page = parseInt(params.page) || 1;
+  const limit = parseInt(params.limit) || 20;
+  const offset = (page - 1) * limit;
+
+  const bookings = await Booking.findAndCountAll({
     order: [["createdAt", "DESC"]],
-    limit: 20,
+    limit,
+    offset,
+    distinct: true,
     include: [
       {
         model: Parcel,
@@ -265,7 +290,7 @@ export const getRecentBookingsService = async () => {
     ],
   });
 
-  const formatted = bookings.map((b) => ({
+  const formatted = bookings.rows.map((b) => ({
     bookingId: b.id,
     user: b.parcel?.user?.name || "N/A",
     partner: b.traveller?.name || "Not assigned",
@@ -276,7 +301,15 @@ export const getRecentBookingsService = async () => {
     amount: b.Payment?.amount || 0,
   }));
 
-  return formatted;
+  return {
+    data: formatted,
+    pagination: {
+      total: bookings.count,
+      page,
+      limit,
+      totalPages: Math.ceil(bookings.count / limit),
+    },
+  };
 };
 
 export const getRoleWiseUserCountService = async () => {
@@ -339,12 +372,19 @@ export const getRecentUserService = async (params = {}) => {
     LIMIT :limit OFFSET :offset
   `;
 
-  const users = await sequelize.query(sqlQuery, {
-    type: QueryTypes.SELECT,
-    replacements: { limit, offset }
-  });
+  const countQuery = `SELECT COUNT(*) AS total FROM users u INNER JOIN user_profiles up ON u.id = up.user_id`;
 
-  return users;
+  const [users, countResult] = await Promise.all([
+    sequelize.query(sqlQuery, { type: QueryTypes.SELECT, replacements: { limit, offset } }),
+    sequelize.query(countQuery, { type: QueryTypes.SELECT }),
+  ]);
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    data: users,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 export const getRecentTravellerService = async (params = {}) => {
@@ -364,12 +404,19 @@ export const getRecentTravellerService = async (params = {}) => {
     LIMIT :limit OFFSET :offset
   `;
 
-  const travellers = await sequelize.query(sqlQuery, {
-    type: QueryTypes.SELECT,
-    replacements: { limit, offset },
-  });
+  const countQuery = `SELECT COUNT(*) AS total FROM traveller_profiles`;
 
-  return travellers;
+  const [travellers, countResult] = await Promise.all([
+    sequelize.query(sqlQuery, { type: QueryTypes.SELECT, replacements: { limit, offset } }),
+    sequelize.query(countQuery, { type: QueryTypes.SELECT }),
+  ]);
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    data: travellers,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 export const getAdminDashboardService = async (params = {}) => {

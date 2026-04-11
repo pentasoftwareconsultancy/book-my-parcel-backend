@@ -11,6 +11,7 @@ import {
   checkDuplicateEmail,
   checkDuplicatePhone
 } from "../../utils/validation.util.js";
+import { getPagination,getPagingData } from "../../utils/pagination.js";
 
 /**
  * ─────────────────────────────
@@ -18,23 +19,26 @@ import {
  * ─────────────────────────────
  */
 export async function fetchUserOrders(userId, query) {
-
   const { status, page = 1, limit = 20 } = query;
 
-  // ✅ Fix status — convert string to array
+  // ✅ Status filter
   const whereClause = {};
   if (status) {
     const statusArray = status.split(",").map(s => s.trim());
     whereClause.status = { [Op.in]: statusArray };
   }
 
-  const { count, rows: bookings } = await Booking.findAndCountAll({
+  // ✅ Use common pagination
+  const { limit: parsedLimit, offset, page: parsedPage } = getPagination(page, limit);
+
+  // ✅ DB query
+  const result = await Booking.findAndCountAll({
     where: whereClause,
     include: [
       {
         model: Parcel,
         as: "parcel",
-        where: { user_id: userId }, // ✅ only user's parcels
+        where: { user_id: userId },
         required: true,
         include: [
           {
@@ -52,13 +56,15 @@ export async function fetchUserOrders(userId, query) {
       {
         model: User,
         as: "traveller",
-        attributes: ["id", "phone_number"], // ✅ NO name from users
+        attributes: ["id", "phone_number"],
         required: false,
-        include: [{
-          model: UserProfile,
-          as: "profile",
-          attributes: ["name"],             // ✅ name from user_profiles
-        }],
+        include: [
+          {
+            model: UserProfile,
+            as: "profile",
+            attributes: ["name"],
+          },
+        ],
       },
       {
         model: TravellerTrip,
@@ -67,63 +73,63 @@ export async function fetchUserOrders(userId, query) {
       },
     ],
     order: [["createdAt", "DESC"]],
-    limit:  parseInt(limit),
-    offset: (parseInt(page) - 1) * parseInt(limit),
+    limit: parsedLimit,   // ✅ FIXED
+    offset,               // ✅ FIXED
   });
 
-  // ✅ Transform data for frontend
-  const orders = bookings.map(booking => {
-    const parcel    = booking.parcel;
+  // ✅ Transform data
+  const orders = result.rows.map(booking => {
+    const parcel = booking.parcel;
     const traveller = booking.traveller;
 
     return {
-      id:         booking.id,
-      bookingId:  `BMP${booking.id.substring(0, 8).toUpperCase()}`,
+      id: booking.id,
+      bookingId: `BMP${booking.id.substring(0, 8).toUpperCase()}`,
       trackingId: `BMP${booking.id.substring(0, 12).toUpperCase()}`,
-      parcelId:   `P${parcel.id.substring(0, 6).toUpperCase()}`,
+      parcelId: `P${parcel.id.substring(0, 6).toUpperCase()}`,
       deliveryId: `D${booking.id.substring(0, 6).toUpperCase()}`,
-      status:     booking.status,
-      amount:     parcel.price_quote || 0,
+      status: booking.status,
+      amount: parcel.price_quote || 0,
       bookedDate: booking.createdAt.toLocaleDateString("en-US", {
         month: "short",
-        day:   "numeric",
-        year:  "numeric",
+        day: "numeric",
+        year: "numeric",
       }),
       pickup: {
-        city:    parcel.pickupAddress?.city    || "",
+        city: parcel.pickupAddress?.city || "",
         address: parcel.pickupAddress?.address || "",
-        state:   parcel.pickupAddress?.state   || "",
+        state: parcel.pickupAddress?.state || "",
       },
       delivery: {
-        city:    parcel.deliveryAddress?.city    || "",
+        city: parcel.deliveryAddress?.city || "",
         address: parcel.deliveryAddress?.address || "",
-        state:   parcel.deliveryAddress?.state   || "",
+        state: parcel.deliveryAddress?.state || "",
       },
       package: {
-        size:   parcel.package_size            || "",
+        size: parcel.package_size || "",
         weight: `${parcel.weight} kg`,
-        eta:    booking.traveller_trip?.estimated_duration || "TBD",
+        eta: booking.traveller_trip?.estimated_duration || "TBD",
       },
-      traveller: traveller ? {
-        name:   traveller.profile?.name || "Unknown", // ✅ from profile
-        phone:  traveller.phone_number  || "-",
-        rating: 0,
-      } : {
-        name:   "Not Assigned",
-        phone:  "-",
-        rating: 0,
-      },
+      traveller: traveller
+        ? {
+            name: traveller.profile?.name || "Unknown",
+            phone: traveller.phone_number || "-",
+            rating: 0,
+          }
+        : {
+            name: "Not Assigned",
+            phone: "-",
+            rating: 0,
+          },
     };
   });
 
+  // ✅ Pagination
+  const pagination = getPagingData(result, parsedPage, parsedLimit);
+
   return {
     orders,
-    pagination: {
-      total:      count,
-      page:       parseInt(page),
-      limit:      parseInt(limit),
-      totalPages: Math.ceil(count / parseInt(limit)),
-    },
+    pagination,
   };
 }
 
@@ -276,7 +282,7 @@ export async function fetchUserStats(userId) {
   bookings.forEach(booking => {
     const status = booking.status;
 
-    if (["CREATED", "MATCHING", "CONFIRMED", "IN_TRANSIT"].includes(status)) {
+    if (["CREATED", "MATCHING", "CONFIRMED", "IN_TRANSIT", "PAYMENT_PENDING"].includes(status)) {
       stats.active += 1;
     } else if (status === "DELIVERED") {
       stats.completed += 1;

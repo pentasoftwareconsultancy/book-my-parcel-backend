@@ -49,4 +49,12 @@ router.post(
   bookingController.cancelBooking
 );
 
+// Payment reception - Pay After Delivery payment reception
+router.post(
+  "/:bookingId/receive-payment",
+  generalLimiter,
+  validateRequest(bookingIdSchema, "params"),
+  bookingController.receivePayment
+);
+
 export default router;

@@ -67,7 +67,8 @@ export const verifyPayment = async (
 
     const result =
       await verifyPaymentService(
-        req.body
+        req.body,
+        req
       );
 
     if (result.success) {
