@@ -8,6 +8,7 @@ import UserProfile from '../user/userProfile.model.js';
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
 import ParcelAcceptance from "../matching/parcelAcceptance.model.js";
+import Feedback from "../feedback/feedback.model.js";
 import app from "../../app.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
 import { BOOKING_STATUS, BOOKING_TRANSITIONS } from "../../utils/constants.js";
@@ -22,6 +23,11 @@ import {
   extractIntermediateCities,
 } from "../../services/googleMaps.service.js";
 import { calculatePrice } from "../../services/priceCalculation.service.js";
+import { calculatePriceWithSurge } from "../../services/priceCalculation.service.js";
+import { getPagination, getPagingData } from "../../utils/pagination.js";
+import { refundPaymentForParcel } from "../payment/payment.service.js";
+import twilioService from "../../services/twilio.service.js";
+import { sendToUser, sendToTraveller } from "../../services/notification.service.js";
 
 const weightMap = { small: 1, medium: 5, large: 10, extra_large: 20 };
 
@@ -241,18 +247,25 @@ export async function createParcelRequest(data, files) {
         intermediateCities = extractIntermediateCities(steps);
         // route_distance_km is the source of truth for short/long classification in Phase 2
         
-        // ── Calculate estimated price based on distance, weight, and dimensions ──
+        // ── Calculate estimated price with surge multiplier ──────────────────
         try {
-          suggestedPrice = calculatePrice(
-            routeDistance, 
+          const priceResult = await calculatePriceWithSurge(
+            routeDistance,
             data.weight || 1,
-            data.length,    // Length in cm
-            data.width,     // Width in cm
-            data.height     // Height in cm
+            data.length,
+            data.width,
+            data.height
           );
-          console.log(`[Price] Calculated suggested price: ₹${suggestedPrice} (distance: ${routeDistance}km, weight: ${data.weight}kg, dimensions: ${data.length}×${data.width}×${data.height}cm)`);
+          suggestedPrice = priceResult.price;
+          // Attach surge info to data so it can be returned to the FE
+          data._surgeMultiplier = priceResult.surgeMultiplier;
+          data._surgeReasons    = priceResult.surgeReasons;
+          data._basePrice       = priceResult.basePrice;
+          console.log(`[Price] ₹${suggestedPrice} (base ₹${priceResult.basePrice} × ${priceResult.surgeMultiplier}× surge: [${priceResult.surgeReasons.join(", ") || "none"}])`);
         } catch (priceError) {
           console.warn(`[Price] Failed to calculate price: ${priceError.message}`);
+          // Fallback to sync calculation
+          try { suggestedPrice = calculatePrice(routeDistance, data.weight || 1, data.length, data.width, data.height); } catch {}
         }
       }
     } catch (error) {
@@ -302,7 +315,15 @@ export async function createParcelRequest(data, files) {
       );
 
       await t.commit();
-      return { parcel, pickupAddress, deliveryAddress, suggestedPrice };
+      return {
+        parcel,
+        pickupAddress,
+        deliveryAddress,
+        suggestedPrice,
+        surgeMultiplier: data._surgeMultiplier || 1,
+        surgeReasons:    data._surgeReasons    || [],
+        basePrice:       data._basePrice       || suggestedPrice,
+      };
     } catch (error) {
       await t.rollback();
       
@@ -327,8 +348,11 @@ export async function createParcelRequest(data, files) {
   }
 }
 
-export async function getUserParcelRequests(userId) {
-  const parcels = await Parcel.findAll({
+export async function getUserParcelRequests(userId, query = {}) {
+  const { page = 1, limit = 20 } = query;
+  const { limit: parsedLimit, offset, page: parsedPage } = getPagination(page, limit);
+
+  const result = await Parcel.findAndCountAll({
     where: { user_id: userId },
     include: [
       { model: Address, as: "pickupAddress" },
@@ -359,8 +383,39 @@ export async function getUserParcelRequests(userId) {
       }
     ],
     order: [["createdAt", "DESC"]],
+    limit: parsedLimit,
+    offset,
+    distinct: true,
+    subQuery: false, // prevents Sequelize from wrapping in subquery which strips includes
   });
-  return parcels;
+
+  // Attach feedback data for DELIVERED parcels
+  const bookingIds = result.rows.map((p) => p.booking?.id).filter(Boolean);
+
+  let feedbackMap = {};
+  if (bookingIds.length > 0) {
+    const feedbacks = await Feedback.findAll({
+      where: { booking_id: bookingIds },
+      attributes: ["booking_id", "rating", "comment"],
+    });
+    feedbacks.forEach((f) => { feedbackMap[f.booking_id] = f; });
+  }
+
+  const parcels = result.rows.map((p) => {
+    const plain = p.toJSON();
+    if (plain.booking?.id) {
+      const fb = feedbackMap[plain.booking.id];
+      plain.has_feedback      = !!fb;
+      plain.existing_feedback = fb ? { rating: fb.rating, comment: fb.comment } : null;
+    } else {
+      plain.has_feedback      = false;
+      plain.existing_feedback = null;
+    }
+    return plain;
+  });
+
+  // returns { total, page, limit, totalPages, data: [...] }
+  return getPagingData({ count: result.count, rows: parcels }, parsedPage, parsedLimit);
 }
 
 export async function getParcelById(parcelId) {
@@ -498,7 +553,17 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         transaction: t 
       });
       
-      if (!booking && parcel.selected_partner_id) {
+      // Use selected_partner_id from stepData (MUST be provided) or from parcel as fallback
+      const selectedPartnerId = stepData.selected_partner_id || parcel.selected_partner_id;
+      
+      if (!selectedPartnerId) {
+        console.warn(`⚠️ [updateParcelStep] No traveller ID provided for booking creation!`);
+        console.warn(`   - stepData.selected_partner_id: ${stepData.selected_partner_id}`);
+        console.warn(`   - parcel.selected_partner_id: ${parcel.selected_partner_id}`);
+      }
+      const paymentMode = stepData.payment_mode || 'PAY_NOW';
+      
+      if (!booking && selectedPartnerId) {
         // Generate Booking ID
         const { generateBookingId } = await import("../../utils/idGenerator.js");
         const bookingRef = await generateBookingId();
@@ -506,13 +571,14 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         // Create booking with Booking ID (but NO tracking ID yet)
         booking = await Booking.create({
           parcel_id: parcelId,
-          traveller_id: parcel.selected_partner_id,
+          traveller_id: selectedPartnerId,
           status: "CONFIRMED",
           booking_ref: bookingRef,
           tracking_ref: null, // Will be generated when IN_TRANSIT
+          payment_mode: paymentMode, // Track whether it's pay now or pay after delivery
         }, { transaction: t });
         
-        console.log(`[updateParcelStep] Booking created with ID: ${bookingRef}`);
+        console.log(`[updateParcelStep] Booking created with ID: ${bookingRef} for traveller: ${selectedPartnerId}`);
       } else if (booking && !booking.booking_ref) {
         // Update existing booking with Booking ID
         const { generateBookingId } = await import("../../utils/idGenerator.js");
@@ -526,17 +592,20 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
     await t.commit();
     
     // ✅ NEW: Emit WebSocket events when Step 3 is completed (booking confirmed)
-    if (stepData.form_step === 3 && booking && parcel.selected_partner_id && req?.app?.get("io")) {
+    const selectedPartnerId = stepData.selected_partner_id || parcel.selected_partner_id;
+    if (stepData.form_step === 3 && booking && selectedPartnerId && req?.app?.get("io")) {
       const io = req.app.get("io");
       
       console.log('🔌 Emitting WebSocket events for booking confirmation (Step 3):', {
         parcelId,
         bookingId: booking.id,
         bookingRef: booking.booking_ref,
-        travellerId: parcel.selected_partner_id
+        travellerId: selectedPartnerId
       });
       
       // Emit booking confirmation to selected traveller
+      const confirmationMessage = "Booking confirmed! Payment received. Proceed to pickup.";
+      
       const bookingConfirmedData = {
         booking_id: booking.id,
         booking_ref: booking.booking_ref,
@@ -545,7 +614,8 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         parcel_ref: parcel.parcel_ref,
         final_price: parcel.price_quote,
         status: "CONFIRMED",
-        message: "Booking confirmed! Payment received.",
+        payment_mode: booking.payment_mode,
+        message: confirmationMessage,
         parcel_details: {
           pickup_address: parcel.pickupAddress,
           delivery_address: parcel.deliveryAddress,
@@ -558,8 +628,8 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         }
       };
       
-      io.to(`traveller_requests_${parcel.selected_partner_id}`).emit("booking_confirmed", bookingConfirmedData);
-      console.log(`🔌 Emitted booking_confirmed to room traveller_requests_${parcel.selected_partner_id}`, bookingConfirmedData);
+      io.to(`traveller_requests_${selectedPartnerId}`).emit("booking_confirmed", bookingConfirmedData);
+      console.log(`🔌 Emitted booking_confirmed to room traveller_requests_${selectedPartnerId}`, bookingConfirmedData);
       
       // Emit to parcel room (for parcel owner)
       io.to(`parcel_${parcelId}`).emit("parcel_booking_confirmed", {
@@ -605,6 +675,8 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
       include: [
         { model: User, as: "user" },
         { model: Booking, as: "booking" },
+        { model: Address, as: "pickupAddress",   foreignKey: "pickup_address_id" },
+        { model: Address, as: "deliveryAddress", foreignKey: "delivery_address_id" },
       ],
     });
     
@@ -629,6 +701,12 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
     const booking = parcel.booking;
     if (booking && !["DELIVERED", "CANCELLED"].includes(booking.status)) {
       await booking.update({ status: "CANCELLED" });
+    }
+
+    // Attempt Razorpay refund if payment was made (non-fatal — cancellation proceeds regardless)
+    const refundResult = await refundPaymentForParcel(parcelId, `Cancelled by user: ${reason}`);
+    if (refundResult.refunded) {
+      console.log(`[Cancellation] ✅ Refund of ₹${refundResult.amount} issued (Razorpay ID: ${refundResult.refundId})`);
     }
 
     // Log cancellation
@@ -668,6 +746,41 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
         io.to(travellerRoom).emit("booking_cancelled", cancelData);
         console.log(`[WebSocket] Emitted booking_cancelled to traveller ${travellerRoom}`);
       }
+    }
+
+    // ── SMS + push notifications (best-effort, non-fatal) ─────────────────
+    try {
+      const fromCity = parcel.pickupAddress?.city  || "pickup";
+      const toCity   = parcel.deliveryAddress?.city || "delivery";
+
+      // Notify sender (in-app)
+      await sendToUser(
+        userId,
+        "Parcel Cancelled",
+        `Your parcel ${parcel.parcel_ref || parcelId} (${fromCity} → ${toCity}) has been cancelled.`,
+        { type: "parcel_cancelled", parcel_id: parcelId }
+      );
+
+      // Notify traveller if a booking existed
+      if (booking?.traveller_id) {
+        await sendToTraveller(
+          booking.traveller_id,
+          "Booking Cancelled",
+          `The sender cancelled parcel ${parcel.parcel_ref || parcelId} (${fromCity} → ${toCity}). Booking ref: ${booking.booking_ref || "N/A"}.`,
+          { type: "booking_cancelled", booking_id: booking.id }
+        );
+
+        // SMS to traveller
+        const travellerUser = await User.findByPk(booking.traveller_id);
+        if (travellerUser?.phone_number) {
+          await twilioService.sendSMS(
+            travellerUser.phone_number,
+            `Book My Parcel: The sender has cancelled booking ${booking.booking_ref || ""}. Parcel: ${fromCity} → ${toCity}. No action needed.`
+          );
+        }
+      }
+    } catch (notifErr) {
+      console.error("[cancelParcelRequest] Notification failed (non-fatal):", notifErr.message);
     }
 
     return {

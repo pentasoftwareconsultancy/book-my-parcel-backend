@@ -46,6 +46,8 @@ router.patch("/kyc/status/:id", authMiddleware, validateStatus, ctrl.updateKYCSt
 router.get("/dashboard/deliveries", authMiddleware, ctrl.getTravelerDeliveries);
 router.get("/dashboard/stats",      authMiddleware, ctrl.getTravelerStats);
 router.get("/dashboard/requests",   authMiddleware, ctrl.getTravelerParcelRequests);
+router.get("/dashboard/pending-payments", authMiddleware, ctrl.getPendingPayments);
+router.get("/dashboard/bookings/:bookingId", authMiddleware, ctrl.getTravelerBookingDetails);
 
 // ── Delivery Status & OTP Management ────────  ✅ NEW
 router.patch("/booking/:bookingId/status", authMiddleware, ctrl.updateBookingStatus);

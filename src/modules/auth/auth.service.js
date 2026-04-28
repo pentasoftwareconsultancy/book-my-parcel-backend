@@ -15,6 +15,7 @@ import {
   checkDuplicateEmail,
   checkDuplicatePhone
 } from "../../utils/validation.util.js";
+import { assignReferralCode, processReferralOnSignup } from "../../services/referral.service.js";
 
 export { generateToken };
 
@@ -65,6 +66,15 @@ export async function signup(userData) {
       city:      userData.city      || null,
       state:     userData.state     || null,
     }, { transaction: t });
+
+    // Assign a unique referral code to this user
+    await assignReferralCode(user.id, t);
+
+    // Process referral code if provided during signup (non-fatal)
+    if (userData.referral_code) {
+      // Run outside transaction so it doesn't block signup if referral fails
+      setImmediate(() => processReferralOnSignup(user.id, userData.referral_code));
+    }
 
     //  Create TravellerProfile 
     await TravellerProfile.create({

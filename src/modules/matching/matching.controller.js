@@ -137,6 +137,19 @@ export async function acceptRequest(req, res) {
       { transaction: t }
     );
 
+    // Decrease available_capacity_kg on the traveller's route
+    if (request.route_id && parcel.weight) {
+      await TravellerRoute.decrement(
+        "available_capacity_kg",
+        {
+          by: Math.ceil(parcel.weight),
+          where: { id: request.route_id },
+          transaction: t,
+        }
+      );
+      console.log(`[Matching] Reduced route ${request.route_id} capacity by ${Math.ceil(parcel.weight)} kg`);
+    }
+
     await t.commit();
 
     // Emit WebSocket event (if socket.io is available)
@@ -393,7 +406,7 @@ export async function getAcceptances(req, res) {
           model: ParcelRequest,
           as: "request",
           attributes: ["detour_km", "detour_percentage", "match_score", "status"],
-          where: { status: "INTERESTED" }, // Only show interested travellers
+          where: { status: { [Op.in]: ["INTERESTED", "ACCEPTED"] } }, // Show both interested and accepted travellers
         },
         {
           model: User,

@@ -58,10 +58,11 @@ async function findCandidateTravellers(parcelData) {
   const candidates = new Set();
 
   try {
-    // Skip if pickup and delivery are the same city (same-city deliveries not supported yet)
-    if (parcelData.pickup.city === parcelData.delivery.city) {
-      console.log(`[Matching] Skipping same-city parcel: ${parcelData.pickup.city} → ${parcelData.delivery.city}`);
-      return [];
+    // For same-city parcels, skip city-level matching (Method C) but still allow
+    // place-ID (Method A), locality (Method B), and spatial (Methods D/E) matching.
+    const isSameCity = parcelData.pickup.city === parcelData.delivery.city;
+    if (isSameCity) {
+      console.log(`[Matching] Same-city parcel detected: ${parcelData.pickup.city} → using locality/place-ID matching only`);
     }
 
     // Method A: Place-ID matching via route_places table
@@ -111,8 +112,9 @@ async function findCandidateTravellers(parcelData) {
       console.log(`[Matching] JSONB array matches: ${arrayMatches.length}`);
     }
 
-    // Method C: City-level JSONB matching (broader fallback)
-    if (candidates.size < 10 && parcelData.pickup.city && parcelData.delivery.city) {
+    // Method C: City-level JSONB matching (broader fallback — skip for same-city parcels
+    // because both cities are identical, which would match every route in that city)
+    if (!isSameCity && candidates.size < 10 && parcelData.pickup.city && parcelData.delivery.city) {
       const cityMatches = await sequelize.query(
         `
         SELECT id FROM traveller_routes

@@ -42,4 +42,10 @@ const Dispute = sequelize.define(
   }
 );
 
+// Define associations
+Dispute.associate = function(models) {
+  Dispute.belongsTo(models.Booking, { foreignKey: 'booking_id', as: 'booking' });
+  Dispute.belongsTo(models.User, { foreignKey: 'raised_by', as: 'raisedBy' });
+};
+
 export default Dispute;

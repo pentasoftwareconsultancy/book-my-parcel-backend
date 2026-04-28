@@ -1,5 +1,6 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { requireAdmin } from "../../middlewares/role.middleware.js";
 import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { validateRequest } from "../../middlewares/validation.middleware.js";
 import ParcelRequest from "./parcelRequest.model.js";
@@ -56,14 +57,14 @@ router.get("/requests", authMiddleware, getTravellerRequests);
 
 // ─── Admin/Testing Routes ───────────────────────────────────────────────────
 
-// POST /api/matching/run-periodic - Manually trigger periodic matching
-router.post("/run-periodic", authMiddleware, runPeriodicMatchingController);
+// POST /api/matching/run-periodic - Manually trigger periodic matching (admin only)
+router.post("/run-periodic", authMiddleware, requireAdmin, runPeriodicMatchingController);
 
-// POST /api/matching/test-parcel/:id - Test matching for specific parcel
-router.post("/test-parcel/:id", authMiddleware, testParcelMatching);
+// POST /api/matching/test-parcel/:id - Test matching for specific parcel (admin only)
+router.post("/test-parcel/:id", authMiddleware, requireAdmin, testParcelMatching);
 
-// GET /api/matching/test-traveller-requests - Test endpoint to see requests for specific traveller
-router.get("/test-traveller-requests/:travellerId", async (req, res) => {
+// GET /api/matching/test-traveller-requests/:travellerId (admin only — no raw DB access for regular users)
+router.get("/test-traveller-requests/:travellerId", authMiddleware, requireAdmin, async (req, res) => {
   try {
     const travellerId = req.params.travellerId;
     const { status = "SENT" } = req.query;

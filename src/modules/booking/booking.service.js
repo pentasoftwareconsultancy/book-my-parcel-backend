@@ -9,6 +9,10 @@ import app from "../../app.js";
 import ParcelTracking from "../tracking/parcelTracking.model.js";
 import TravellerTrip from "../traveller/travellerTrip.model.js";
 import TravellerRoute from "../traveller/travellerRoute.model.js";
+import { creditWalletService } from "../payment/wallet.service.js";
+import PendingPayment from "./pendingPayment.model.js";
+import { createNotification } from "../notification/notification.service.js";
+import { creditReferralOnFirstDelivery } from "../../services/referral.service.js";
 
 
 class BookingService {
@@ -26,8 +30,6 @@ class BookingService {
 
   // Get booking with all related data
   async getBookingWithDetails(bookingId) {
-    console.log(`🔍 [DEBUG] getBookingWithDetails called with bookingId: ${bookingId}`);
-    
     const booking = await Booking.findOne({
       where: { id: bookingId },
       include: [
@@ -62,56 +64,23 @@ class BookingService {
       ],
     });
     
-    console.log(`🔍 [DEBUG] Booking query result:`, booking ? 'FOUND' : 'NOT FOUND');
-    if (booking) {
-      console.log(`🔍 [DEBUG] Found booking:`, {
-        id: booking.id,
-        status: booking.status,
-        traveller_id: booking.traveller_id,
-        parcel_id: booking.parcel_id,
-        hasParcel: !!booking.parcel,
-        hasPickupAddress: !!booking.parcel?.pickupAddress
-      });
-    }
-    
     return booking;
   }
 
   // Start pickup process
   async startPickup(bookingId, travellerId) {
-    console.log(`🔍 [DEBUG] startPickup called with:`, { bookingId, travellerId });
-    
     const booking = await this.getBookingWithDetails(bookingId);
-    console.log(`🔍 [DEBUG] Booking found:`, booking ? 'YES' : 'NO');
-    
-    if (booking) {
-      console.log(`🔍 [DEBUG] Booking details:`, {
-        id: booking.id,
-        status: booking.status,
-        traveller_id: booking.traveller_id,
-        parcel_id: booking.parcel_id
-      });
-    }
 
     if (!booking) {
-      console.error(`❌ [DEBUG] Booking not found for ID: ${bookingId}`);
       throw new Error("Booking not found");
     }
 
     if (booking.traveller_id !== travellerId) {
-      console.error(`❌ [DEBUG] Unauthorized access:`, {
-        booking_traveller_id: booking.traveller_id,
-        request_traveller_id: travellerId
-      });
       throw new Error("Unauthorized: You don't own this booking");
     }
 
     // Allow CONFIRMED or PICKUP status (for resend)
     if (!["CONFIRMED", "PICKUP"].includes(booking.status)) {
-      console.error(`❌ [DEBUG] Invalid status:`, {
-        current_status: booking.status,
-        expected: ["CONFIRMED", "PICKUP"]
-      });
       throw new Error(`Invalid status: Expected CONFIRMED or PICKUP, got ${booking.status}`);
     }
 
@@ -342,6 +311,27 @@ class BookingService {
       console.log(`[WebSocket] Emitted pickup_verified to ${travellerRoom}`);
     }
 
+    // ── Persist notifications ──────────────────────────────────────────────
+    const io2 = this.getIO();
+    // Notify user: parcel picked up
+    await createNotification(io2, {
+      user_id:   booking.parcel.user_id,
+      role:      "user",
+      type_code: "parcel_picked_up",
+      title:     "Parcel Picked Up",
+      message:   `Your parcel has been picked up by the traveller. Booking ref: ${booking.booking_ref}`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+    // Notify traveller: delivery started
+    await createNotification(io2, {
+      user_id:   travellerId,
+      role:      "traveller",
+      type_code: "delivery_started",
+      title:     "Pickup Verified",
+      message:   `Pickup verified for booking ${booking.booking_ref}. Head to the delivery address.`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+
     return {
       booking_id: booking.id,
       status: "IN_TRANSIT",
@@ -510,16 +500,31 @@ class BookingService {
       throw error;
     }
 
-    // OTP is correct - update status to DELIVERED
+    // OTP is correct — always set DELIVERED and credit wallet immediately
     await booking.update({
       status: "DELIVERED",
-      delivery_otp: null, // Clear OTP for security
+      delivery_otp: null,
       delivered_at: new Date(),
       delivery_otp_attempts: 0,
     });
 
-    // TODO: Release payment to traveller wallet
-    // TODO: Update traveller's total_deliveries count
+    // Credit traveller wallet
+    try {
+      const amount = booking.parcel?.price_quote || 0;
+      if (amount > 0 && booking.traveller_id) {
+        const walletResult = await creditWalletService(
+          booking.traveller_id,
+          amount,
+          `Delivery payment for booking ${booking.booking_ref}`
+        );
+        console.log(`✅ ₹${amount} credited to traveller ${booking.traveller_id}. New balance: ₹${walletResult.newBalance}`);
+      }
+    } catch (paymentError) {
+      console.error("❌ [Delivery Payment] Failed to credit wallet:", paymentError.message);
+    }
+
+    // Credit referral bonus if this is the sender's first completed delivery
+    setImmediate(() => creditReferralOnFirstDelivery(booking.parcel.user_id));
 
     // Send delivery confirmation SMS to sender
     try {
@@ -552,32 +557,39 @@ class BookingService {
         status: "DELIVERED",
         delivered_at: booking.delivered_at,
       };
-      
-      // Log room information for debugging
       const senderRoom = `user_${senderId}`;
       const travellerRoom = `user_${travellerId}`;
-      const senderClients = io.sockets.adapter.rooms.get(senderRoom);
-      const travellerClients = io.sockets.adapter.rooms.get(travellerRoom);
-      
-      console.log(`[WebSocket] Attempting to emit delivery_verified:`);
-      console.log(`  - Sender room: ${senderRoom} (${senderClients?.size || 0} clients)`);
-      console.log(`  - Traveller room: ${travellerRoom} (${travellerClients?.size || 0} clients)`);
-      
-      // Emit to sender (user who created the parcel)
       io.to(senderRoom).emit("delivery_verified", eventData);
-      console.log(`[WebSocket] Emitted delivery_verified to ${senderRoom}`);
-      
-      // Emit to traveller
       io.to(travellerRoom).emit("delivery_verified", eventData);
-      console.log(`[WebSocket] Emitted delivery_verified to ${travellerRoom}`);
+      console.log(`[WebSocket] Emitted delivery_verified to ${senderRoom} and ${travellerRoom}`);
     }
+
+    // ── Persist notifications ──────────────────────────────────────────────
+    const io2 = this.getIO();
+    // Notify user: parcel delivered
+    await createNotification(io2, {
+      user_id:   booking.parcel.user_id,
+      role:      "user",
+      type_code: "parcel_delivered",
+      title:     "Parcel Delivered Successfully",
+      message:   `Your parcel has been delivered successfully. Booking ref: ${booking.booking_ref}`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
+    // Notify traveller: delivery completed + payment
+    await createNotification(io2, {
+      user_id:   travellerId,
+      role:      "traveller",
+      type_code: "delivery_completed",
+      title:     "Delivery Completed",
+      message:   `You successfully delivered parcel ${booking.booking_ref}. Great job!`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref },
+    });
 
     return {
       booking_id: booking.id,
       status: "DELIVERED",
       message: "Delivery completed successfully!",
       delivered_at: booking.delivered_at,
-      // earnings: 500, // TODO: Calculate from booking
     };
   }
 
@@ -610,6 +622,20 @@ class BookingService {
     await booking.parcel.update({
       status: "CANCELLED",
     });
+
+    // Restore route capacity when booking is cancelled
+    try {
+      const parcelWeight = booking.parcel?.weight;
+      if (parcelWeight && booking.trip_id) {
+        await TravellerRoute.increment(
+          "available_capacity_kg",
+          { by: Math.ceil(parcelWeight), where: { id: booking.trip_id } }
+        );
+        console.log(`[Booking] Restored ${Math.ceil(parcelWeight)} kg capacity to route ${booking.trip_id}`);
+      }
+    } catch (capErr) {
+      console.warn("[Booking] Failed to restore route capacity (non-fatal):", capErr.message);
+    }
 
     // Log cancellation
     console.log(`📋 [Cancellation] Booking cancelled:`, {
@@ -653,6 +679,17 @@ class BookingService {
       console.log(`[WebSocket] Emitted booking_cancelled to traveller ${travellerRoom}`);
     }
 
+    // ── Persist notifications ──────────────────────────────────────────────
+    const io2 = this.getIO();
+    await createNotification(io2, {
+      user_id:   booking.parcel.user_id,
+      role:      "user",
+      type_code: "booking_cancelled",
+      title:     "Booking Cancelled",
+      message:   `Your booking ${booking.booking_ref} has been cancelled by the traveller.`,
+      meta:      { booking_id: booking.id, booking_ref: booking.booking_ref, reason },
+    });
+
     return {
       success: true,
       booking_id: booking.id,
@@ -661,6 +698,82 @@ class BookingService {
       message: "Booking cancelled successfully",
       cancelled_at: new Date(),
     };
+  }
+
+  // POST /api/booking/:bookingId/receive-payment (Traveller receives payment after delivery)
+  async receivePayment(bookingId, travellerId) {
+    try {
+      // Find the booking
+      const booking = await Booking.findByPk(bookingId, {
+        include: [{ model: Parcel, as: "parcel" }],
+      });
+
+      if (!booking) {
+        throw new Error("Booking not found");
+      }
+
+      if (booking.traveller_id !== travellerId) {
+        throw new Error("Unauthorized: You don't own this booking");
+      }
+
+      if (booking.status !== "PAYMENT_PENDING") {
+        throw new Error(`Invalid status: Expected PAYMENT_PENDING, got ${booking.status}`);
+      }
+
+      if (booking.payment_mode !== "PAY_AFTER_DELIVERY") {
+        throw new Error("This booking is not in Pay After Delivery mode");
+      }
+
+      // Find pending payment record
+      const pendingPayment = await PendingPayment.findOne({
+        where: {
+          booking_id: bookingId,
+          traveller_id: travellerId,
+          status: "PENDING_RECEIPT",
+        },
+      });
+
+      if (!pendingPayment) {
+        throw new Error("No pending payment found for this booking");
+      }
+
+      const amount = pendingPayment.amount;
+
+      // ✅ PAY_AFTER_DELIVERY: Do NOT credit wallet
+      // Money stays with sender/system, not added to traveller wallet
+      // Mark payment as received for record-keeping only
+
+      // Update pending payment status to RECEIVED
+      await pendingPayment.update({
+        status: "RECEIVED",
+        received_at: new Date(),
+      });
+
+      // ✅ Update booking status from PAYMENT_PENDING to DELIVERED
+      await booking.update({
+        status: "DELIVERED",
+      });
+
+      console.log(
+        `✅ [Payment Received] Payment ₹${amount} marked as received for traveller ${travellerId} for booking ${booking.booking_ref}`
+      );
+      console.log(
+        `✅ [Booking Delivered] Booking ${booking.booking_ref} status updated to DELIVERED`
+      );
+
+      return {
+        success: true,
+        booking_id: booking.id,
+        booking_ref: booking.booking_ref,
+        amount: amount,
+        status: "RECEIVED",
+        message: `Payment ₹${amount} received. Amount stays with payment system (cash/UPI).`,
+        received_at: new Date(),
+      };
+    } catch (error) {
+      console.error("❌ Error in receivePayment:", error.message);
+      throw error;
+    }
   }
 }
 

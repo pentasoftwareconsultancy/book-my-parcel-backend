@@ -1,5 +1,7 @@
 import admin from "firebase-admin";
 import sequelize from "../config/database.config.js";
+import { createNotification } from "../modules/notification/notification.service.js";
+import app from "../app.js";
 
 // Initialize Firebase Admin (assumes FIREBASE_SERVICE_ACCOUNT_KEY is set in .env)
 let firebaseInitialized = false;
@@ -28,120 +30,84 @@ function initializeFirebase() {
 
 // ─── Send Notification to Traveller ────────────────────────────────────────
 export async function sendToTraveller(travellerId, title, body, data = {}) {
+  // ── 1. Persist to notifications table ──────────────────────────────────
+  try {
+    const io = app.get("io");
+    await createNotification(io, {
+      user_id:   travellerId,
+      role:      "traveller",
+      type_code: data.type || "general",
+      title,
+      message:   body,
+      meta:      Object.keys(data).length ? data : null,
+    });
+  } catch (dbErr) {
+    console.error("[Notification] Failed to persist traveller notification:", dbErr.message);
+  }
+
+  // ── 2. FCM push (best-effort) ───────────────────────────────────────────
   try {
     initializeFirebase();
+    if (!firebaseInitialized) return { success: false, message: "Firebase not initialized" };
 
-    if (!firebaseInitialized) {
-      console.warn("[Notification] Firebase not initialized, skipping FCM");
-      return { success: false, message: "Firebase not initialized" };
-    }
-
-    // Get FCM tokens for traveller
     const tokens = await sequelize.query(
       `SELECT token FROM user_device_tokens WHERE user_id = :userId AND device_type = 'mobile'`,
-      {
-        replacements: { userId: travellerId },
-        type: sequelize.QueryTypes.SELECT,
-      }
+      { replacements: { userId: travellerId }, type: sequelize.QueryTypes.SELECT }
     );
 
-    if (tokens.length === 0) {
-      console.log(`[Notification] No FCM tokens found for traveller ${travellerId}`);
-      return { success: false, message: "No device tokens found" };
-    }
+    if (tokens.length === 0) return { success: false, message: "No device tokens found" };
 
-    const message = {
-      notification: {
-        title,
-        body,
-      },
-      data: {
-        ...data,
-        timestamp: new Date().toISOString(),
-      },
-    };
-
+    const message = { notification: { title, body }, data: { ...data, timestamp: new Date().toISOString() } };
     const results = await Promise.all(
-      tokens.map((t) =>
-        admin
-          .messaging()
-          .send({
-            ...message,
-            token: t.token,
-          })
-          .catch((error) => {
-            console.error(`[Notification] Failed to send to token ${t.token}:`, error.message);
-            return null;
-          })
-      )
+      tokens.map((t) => admin.messaging().send({ ...message, token: t.token }).catch(() => null))
     );
-
-    const successCount = results.filter((r) => r !== null).length;
-    console.log(`[Notification] Sent to ${successCount}/${tokens.length} devices for traveller ${travellerId}`);
-
+    const successCount = results.filter(Boolean).length;
+    console.log(`[Notification] FCM sent to ${successCount}/${tokens.length} devices for traveller ${travellerId}`);
     return { success: true, sent: successCount, total: tokens.length };
   } catch (error) {
-    console.error("[Notification] Error sending to traveller:", error.message);
+    console.error("[Notification] FCM error for traveller:", error.message);
     return { success: false, error: error.message };
   }
 }
 
 // ─── Send Notification to User ─────────────────────────────────────────────
 export async function sendToUser(userId, title, body, data = {}) {
+  // ── 1. Persist to notifications table ──────────────────────────────────
+  try {
+    const io = app.get("io");
+    await createNotification(io, {
+      user_id:   userId,
+      role:      "user",
+      type_code: data.type || "general",
+      title,
+      message:   body,
+      meta:      Object.keys(data).length ? data : null,
+    });
+  } catch (dbErr) {
+    console.error("[Notification] Failed to persist user notification:", dbErr.message);
+  }
+
+  // ── 2. FCM push (best-effort) ───────────────────────────────────────────
   try {
     initializeFirebase();
+    if (!firebaseInitialized) return { success: false, message: "Firebase not initialized" };
 
-    if (!firebaseInitialized) {
-      console.warn("[Notification] Firebase not initialized, skipping FCM");
-      return { success: false, message: "Firebase not initialized" };
-    }
-
-    // Get FCM tokens for user
     const tokens = await sequelize.query(
       `SELECT token FROM user_device_tokens WHERE user_id = :userId`,
-      {
-        replacements: { userId },
-        type: sequelize.QueryTypes.SELECT,
-      }
+      { replacements: { userId }, type: sequelize.QueryTypes.SELECT }
     );
 
-    if (tokens.length === 0) {
-      console.log(`[Notification] No FCM tokens found for user ${userId}`);
-      return { success: false, message: "No device tokens found" };
-    }
+    if (tokens.length === 0) return { success: false, message: "No device tokens found" };
 
-    const message = {
-      notification: {
-        title,
-        body,
-      },
-      data: {
-        ...data,
-        timestamp: new Date().toISOString(),
-      },
-    };
-
+    const message = { notification: { title, body }, data: { ...data, timestamp: new Date().toISOString() } };
     const results = await Promise.all(
-      tokens.map((t) =>
-        admin
-          .messaging()
-          .send({
-            ...message,
-            token: t.token,
-          })
-          .catch((error) => {
-            console.error(`[Notification] Failed to send to token ${t.token}:`, error.message);
-            return null;
-          })
-      )
+      tokens.map((t) => admin.messaging().send({ ...message, token: t.token }).catch(() => null))
     );
-
-    const successCount = results.filter((r) => r !== null).length;
-    console.log(`[Notification] Sent to ${successCount}/${tokens.length} devices for user ${userId}`);
-
+    const successCount = results.filter(Boolean).length;
+    console.log(`[Notification] FCM sent to ${successCount}/${tokens.length} devices for user ${userId}`);
     return { success: true, sent: successCount, total: tokens.length };
   } catch (error) {
-    console.error("[Notification] Error sending to user:", error.message);
+    console.error("[Notification] FCM error for user:", error.message);
     return { success: false, error: error.message };
   }
 }

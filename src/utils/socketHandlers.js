@@ -1,4 +1,5 @@
 import { expireOldRequests } from "../services/matchingEngine.service.js";
+import ChatMessage from "../modules/booking/chatMessage.model.js";
 
 export function setupSocketHandlers(io) {
   console.log("✅ Socket.IO server initialized");
@@ -27,6 +28,9 @@ export function setupSocketHandlers(io) {
       const clients = io.sockets.adapter.rooms.get(room);
       console.log(`[Socket] Room ${room} now has ${clients?.size || 0} member(s)`);
     };
+
+    socket.on("join_user",      joinUserRoom);
+    socket.on("join_user_room", joinUserRoom);
 
     // ─── Leave user room ──────────────────────────────────────────────────
     socket.on("leave_user", (userId) => {
@@ -77,13 +81,64 @@ export function setupSocketHandlers(io) {
         return;
       }
       const room = `booking_${bookingId}`;
-      // socket.to = broadcast to everyone in room EXCEPT the sender
       socket.to(room).emit("location-update", {
         lat,
         lng,
         timestamp: Date.now(),
       });
       console.log(`[Socket] Location → room ${room}: ${lat}, ${lng}`);
+    });
+
+    // ─── In-app chat ──────────────────────────────────────────────────────
+    // Both sender and traveller join the booking room (already handled by join-booking)
+    // Client emits: { bookingId, senderId, senderRole, message }
+    socket.on("chat_message", async ({ bookingId, senderId, senderRole, message }) => {
+      if (!bookingId || !senderId || !senderRole || !message?.trim()) {
+        console.warn("[Socket] Invalid chat_message payload");
+        return;
+      }
+
+      try {
+        // Persist to DB
+        const saved = await ChatMessage.create({
+          booking_id:  bookingId,
+          sender_id:   senderId,
+          sender_role: senderRole,
+          message:     message.trim(),
+        });
+
+        const payload = {
+          id:          saved.id,
+          booking_id:  bookingId,
+          sender_id:   senderId,
+          sender_role: senderRole,
+          message:     saved.message,
+          is_read:     false,
+          createdAt:   saved.createdAt,
+        };
+
+        // Broadcast to everyone in the booking room (including sender for confirmation)
+        io.to(`booking_${bookingId}`).emit("chat_message", payload);
+        console.log(`[Socket] Chat → booking_${bookingId}: "${saved.message.substring(0, 40)}"`);
+      } catch (err) {
+        console.error("[Socket] Failed to save chat message:", err.message);
+        socket.emit("chat_error", { message: "Failed to send message. Please try again." });
+      }
+    });
+
+    // ─── Mark chat messages as read ───────────────────────────────────────
+    socket.on("chat_read", async ({ bookingId, readerId }) => {
+      if (!bookingId || !readerId) return;
+      try {
+        await ChatMessage.update(
+          { is_read: true },
+          { where: { booking_id: bookingId, is_read: false } }
+        );
+        // Notify the other party their messages were read
+        socket.to(`booking_${bookingId}`).emit("chat_read_ack", { bookingId, readerId });
+      } catch (err) {
+        console.error("[Socket] Failed to mark messages read:", err.message);
+      }
     });
 
     // ─── Disconnect ───────────────────────────────────────────────────────
@@ -140,4 +195,9 @@ export function emitOtpEvent(io, userId, event, data) {
 export function emitBookingEvent(io, bookingId, event, data) {
   io.to(`booking_${bookingId}`).emit(event, data);
   console.log(`[Socket] Emitted ${event} to booking_${bookingId}`);
+}
+
+export function emitNotification(io, userId, notification) {
+  io.to(`user_${userId}`).emit("new_notification", notification);
+  console.log(`[Socket] Emitted new_notification to user_${userId}`);
 }

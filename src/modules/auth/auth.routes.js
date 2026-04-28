@@ -11,12 +11,12 @@ import {
 
 import { uploadProfile } from "../../utils/fileUpload.util.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import { loginLimiter, sensitiveLimiter } from "../../middlewares/rateLimit.middleware.js";
+import { loginLimiter, signupLimiter, sensitiveLimiter } from "../../middlewares/rateLimit.middleware.js";
 
 const router = express.Router();
 
 // Public routes with rate limiting
-router.post("/signup", loginLimiter, signupController);
+router.post("/signup", signupLimiter, signupController);
 router.post("/login", loginLimiter, loginController);
 
 // Protected routes

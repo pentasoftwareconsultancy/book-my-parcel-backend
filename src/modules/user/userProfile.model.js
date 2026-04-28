@@ -21,6 +21,11 @@ const UserProfile = sequelize.define(
     lat: DataTypes.DECIMAL,
     lng: DataTypes.DECIMAL,
     avatar_url: DataTypes.STRING,
+    referral_code: {
+      type: DataTypes.STRING(12),
+      allowNull: true,
+      unique: true,
+    },
 
   },
   { timestamps: true }

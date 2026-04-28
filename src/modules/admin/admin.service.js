@@ -10,6 +10,7 @@ import BookingStatusLog from "../booking/bookingStatusLog.model.js";
 import Payment from "../payment/payment.model.js";
 import Parcel from "../parcel/parcel.model.js";
 import TravellerTrip from "../traveller/travellerTrip.model.js";
+import UserProfile from "../user/userProfile.model.js";
 
 /**
  * Admin Fetch Users with Pagination + Role Filter
@@ -17,6 +18,66 @@ import TravellerTrip from "../traveller/travellerTrip.model.js";
  * @param {number} limit
  * @param {string} role
  */
+// export const getAllUsers = async ({ page = 1, limit = 10 }) => {
+//   const offset = (page - 1) * limit;
+
+//   const users = await sequelize.query(
+//     `
+//     SELECT 
+//       u.id,
+//       up.name,
+//       u.phone_number,
+//       u.alternate_phone,
+//       u.email,
+//       u."createdAt",
+//       u."updatedAt"
+//     FROM users u
+//     LEFT JOIN user_profiles up ON up.user_id = u.id
+//     WHERE EXISTS (
+//       SELECT 1 FROM user_roles ur
+//       JOIN roles r ON ur.role_id = r.id
+//       WHERE ur.user_id = u.id
+//       AND r.name = 'INDIVIDUAL'
+//     )
+//     ORDER BY u."createdAt" DESC
+//     LIMIT :limit OFFSET :offset
+//     `,
+//     {
+//       replacements: { limit, offset },
+//       type: QueryTypes.SELECT
+//     }
+//   );
+
+//   const countResult = await sequelize.query(
+//     `
+//     SELECT COUNT(*) as total
+//     FROM users u
+//     WHERE EXISTS (
+//       SELECT 1 FROM user_roles ur
+//       JOIN roles r ON ur.role_id = r.id
+//       WHERE ur.user_id = u.id
+//       AND r.name = 'INDIVIDUAL'
+//     )
+//     `,
+//     {
+//       type: QueryTypes.SELECT
+//     }
+//   );
+
+//   const total = parseInt(countResult[0].total);
+
+//   return {
+//     users,
+//     pagination: {
+//       total,
+//       page: Number(page),
+//       limit: Number(limit),
+//       totalPages: Math.ceil(total / limit)
+//     }
+//   }; 
+// };
+
+
 export const getAllUsers = async ({ page = 1, limit = 10 }) => {
   const offset = (page - 1) * limit;
 
@@ -24,55 +85,58 @@ export const getAllUsers = async ({ page = 1, limit = 10 }) => {
     `
     SELECT 
       u.id,
-      u.name,
-      u.phone_number,
-      u.alternate_phone,
+      up.name,
+      up.city,
+      up.state,
       u.email,
+      u.phone_number,
       u."createdAt",
-      u."updatedAt"
+
+      /* BOOKINGS COUNT */
+      COUNT(DISTINCT b.id) AS bookings,
+
+      /* TOTAL SPEND */
+      COALESCE(SUM(p.amount), 0) AS total_spend,
+
+      /* LAST BOOKING DATE */
+      MAX(b."createdAt") AS last_booking,
+
+      /* KYC STATUS */
+      CASE 
+        WHEN tk.status = 'APPROVED' THEN true
+        ELSE false
+      END AS kyc_verified
+
     FROM users u
+
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+
+    LEFT JOIN bookings b ON b.user_id = u.id
+
+    LEFT JOIN payments p ON p.booking_id = b.id 
+    AND p.status = 'SUCCESS'
+
+    LEFT JOIN traveller_kyc tk ON tk.user_id = u.id
+
     WHERE EXISTS (
       SELECT 1 FROM user_roles ur
       JOIN roles r ON ur.role_id = r.id
       WHERE ur.user_id = u.id
       AND r.name = 'INDIVIDUAL'
     )
+
+    GROUP BY u.id, up.name, up.city, up.state, u.email, u.phone_number, u."createdAt", tk.status
+
     ORDER BY u."createdAt" DESC
     LIMIT :limit OFFSET :offset
     `,
     {
       replacements: { limit, offset },
-      type: QueryTypes.SELECT
+      type: QueryTypes.SELECT,
     }
   );
 
-  const countResult = await sequelize.query(
-    `
-    SELECT COUNT(*) as total
-    FROM users u
-    WHERE EXISTS (
-      SELECT 1 FROM user_roles ur
-      JOIN roles r ON ur.role_id = r.id
-      WHERE ur.user_id = u.id
-      AND r.name = 'INDIVIDUAL'
-    )
-    `,
-    {
-      type: QueryTypes.SELECT
-    }
-  );
-
-  const total = parseInt(countResult[0].total);
-
-  return {
-    users,
-    pagination: {
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit)
-    }
-  };
+  return { users };
 };
 
 export const getAllBookings = async ({ page = 1, limit = 10 }) => {
@@ -85,8 +149,7 @@ export const getAllBookings = async ({ page = 1, limit = 10 }) => {
       b.amount,
       b."createdAt",
 
-      u.id AS user_id,
-      u.name AS user_name,
+      up.name AS user_name,
       u.phone_number,
       u.email,
 
@@ -106,20 +169,38 @@ export const getAllBookings = async ({ page = 1, limit = 10 }) => {
       da.state AS delivery_state,
       da.pincode AS delivery_pincode
 
-    FROM bookings b
-    JOIN users u ON u.id = b.user_id
-    JOIN parcels p ON p.id = b.parcel_id
-    JOIN address pa ON pa.id = b.pickup_address_id
-    JOIN address da ON da.id = b.delivery_address_id
+    FROM booking b
+    JOIN parcel p ON p.id = b.parcel_id
+    JOIN users u ON u.id = p.user_id
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+    LEFT JOIN address pa ON pa.id = p.pickup_address_id
+    LEFT JOIN address da ON da.id = p.delivery_address_id
 
     ORDER BY b."createdAt" DESC
     LIMIT :limit OFFSET :offset
   `;
 
-  return await sequelize.query(query, {
+  const bookings = await sequelize.query(query, {
     type: QueryTypes.SELECT,
     replacements: { limit, offset },
   });
+
+  const countResult = await sequelize.query(
+    `SELECT COUNT(*) AS total FROM booking b JOIN parcel p ON p.id = b.parcel_id`,
+    { type: QueryTypes.SELECT }
+  );
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    bookings,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit),
+    },
+  };
 };
 
 /**
@@ -218,12 +299,19 @@ export const updateTravelerKYCStatus = async (kycId, status) => {
 
   await kyc.update({ status });
   
-  // Also update user's kyc_verified status if approved
+  // Update traveller profile status when KYC is approved/rejected
   if (status === KYC_STATUS.APPROVED) {
-    const user = await User.findByPk(kyc.user_id);
-    if (user) {
-      await user.update({ kyc_verified: true });
-    }
+    const TravellerProfile = (await import("../traveller/travellerProfile.model.js")).default;
+    await TravellerProfile.update(
+      { status: "ACTIVE" },
+      { where: { user_id: kyc.user_id } }
+    );
+  } else if (status === KYC_STATUS.REJECTED) {
+    const TravellerProfile = (await import("../traveller/travellerProfile.model.js")).default;
+    await TravellerProfile.update(
+      { status: "INCOMPLETE" },
+      { where: { user_id: kyc.user_id } }
+    );
   }
 
   return kyc;
@@ -231,10 +319,16 @@ export const updateTravelerKYCStatus = async (kycId, status) => {
 
 // -------------------------------------- admin overview dashboard ----------------------------------------
 
-export const getRecentBookingsService = async () => {
-  const bookings = await Booking.findAll({
+export const getRecentBookingsService = async (params = {}) => {
+  const page = parseInt(params.page) || 1;
+  const limit = parseInt(params.limit) || 20;
+  const offset = (page - 1) * limit;
+
+  const bookings = await Booking.findAndCountAll({
     order: [["createdAt", "DESC"]],
-    limit: 20,
+    limit,
+    offset,
+    distinct: true,
     include: [
       {
         model: Parcel,
@@ -265,7 +359,7 @@ export const getRecentBookingsService = async () => {
     ],
   });
 
-  const formatted = bookings.map((b) => ({
+  const formatted = bookings.rows.map((b) => ({
     bookingId: b.id,
     user: b.parcel?.user?.name || "N/A",
     partner: b.traveller?.name || "Not assigned",
@@ -276,7 +370,15 @@ export const getRecentBookingsService = async () => {
     amount: b.Payment?.amount || 0,
   }));
 
-  return formatted;
+  return {
+    data: formatted,
+    pagination: {
+      total: bookings.count,
+      page,
+      limit,
+      totalPages: Math.ceil(bookings.count / limit),
+    },
+  };
 };
 
 export const getRoleWiseUserCountService = async () => {
@@ -329,7 +431,7 @@ export const getRecentUserService = async (params = {}) => {
   const sqlQuery = `
     SELECT
       u.id,
-      up.full_name,
+      up.name,
       u.email,
       u."createdAt"
     FROM users u
@@ -339,12 +441,19 @@ export const getRecentUserService = async (params = {}) => {
     LIMIT :limit OFFSET :offset
   `;
 
-  const users = await sequelize.query(sqlQuery, {
-    type: QueryTypes.SELECT,
-    replacements: { limit, offset }
-  });
+  const countQuery = `SELECT COUNT(*) AS total FROM users u INNER JOIN user_profiles up ON u.id = up.user_id`;
 
-  return users;
+  const [users, countResult] = await Promise.all([
+    sequelize.query(sqlQuery, { type: QueryTypes.SELECT, replacements: { limit, offset } }),
+    sequelize.query(countQuery, { type: QueryTypes.SELECT }),
+  ]);
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    data: users,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 export const getRecentTravellerService = async (params = {}) => {
@@ -355,21 +464,30 @@ export const getRecentTravellerService = async (params = {}) => {
   const sqlQuery = `
     SELECT
       tp.id AS traveller_profile_id,
-      tp.name,
-      tp.email,
+      up.name,
+      u.email,
       tp.status,
       tp."createdAt"
     FROM traveller_profiles tp
+    JOIN users u ON u.id = tp.user_id
+    LEFT JOIN user_profiles up ON up.user_id = tp.user_id
     ORDER BY tp."createdAt" DESC
     LIMIT :limit OFFSET :offset
   `;
 
-  const travellers = await sequelize.query(sqlQuery, {
-    type: QueryTypes.SELECT,
-    replacements: { limit, offset },
-  });
+  const countQuery = `SELECT COUNT(*) AS total FROM traveller_profiles`;
 
-  return travellers;
+  const [travellers, countResult] = await Promise.all([
+    sequelize.query(sqlQuery, { type: QueryTypes.SELECT, replacements: { limit, offset } }),
+    sequelize.query(countQuery, { type: QueryTypes.SELECT }),
+  ]);
+
+  const total = parseInt(countResult[0].total);
+
+  return {
+    data: travellers,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 export const getAdminDashboardService = async (params = {}) => {
@@ -412,4 +530,165 @@ export const getAdminDashboardService = async (params = {}) => {
     recentTravellers,
     recentBookings
   };
+};
+
+
+//GET DISPUTES
+
+export const getAllDisputes = async ({ page = 1, limit = 10, status = null }) => {
+  const offset = (page - 1) * limit;
+
+  console.log("Admin Service - Get All Disputes called with params:", { page, limit, status });
+
+  let whereClause = "";
+  let replacements = { limit, offset };
+
+  console.log("Constructing SQL query with whereClause:", whereClause, "and replacements:", replacements);
+
+  if (status) {
+    whereClause = "WHERE d.status = :status";
+    replacements.status = status;
+  }
+  
+
+  const query = `
+    SELECT 
+      d.id AS dispute_id,
+      d.dispute_type,
+      d.description,
+      d.status AS dispute_status,
+      d.role,
+      d."created_at",
+
+      -- Booking Info
+      b.id AS booking_id,
+      b.status AS booking_status,
+      b.amount,
+
+      -- Raised By (User/Traveller)
+      u.id AS raised_by_id,
+      up.name AS raised_by_name,
+      u.email,
+      u.phone_number,
+
+      -- Parcel Info
+      p.id AS parcel_id,
+      p.parcel_type,
+      p.weight,
+
+      -- Pickup Address
+      pa.address AS pickup_address,
+      pa.city AS pickup_city,
+
+      -- Delivery Address
+      da.address AS delivery_address,
+      da.city AS delivery_city
+
+    FROM disputes d
+
+    LEFT JOIN booking b ON b.id = d.booking_id
+    LEFT JOIN users u ON u.id = d.raised_by
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+
+    LEFT JOIN parcel p ON p.id = b.parcel_id
+    LEFT JOIN address pa ON pa.id = p.pickup_address_id
+    LEFT JOIN address da ON da.id = p.delivery_address_id
+
+    ${whereClause}
+
+    ORDER BY d."created_at" DESC
+    LIMIT :limit OFFSET :offset
+  `;
+
+  console.log("Final SQL Query for fetching disputes:", query);
+  console.log("With replacements:", replacements);
+
+
+  const disputes = await sequelize.query(query, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+
+  console.log("ABCD",`Fetched ${disputes.length} disputes from database`);
+
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM disputes d
+    ${whereClause}
+  `;
+
+  console.log("Count Query for disputes:", countQuery, "with replacements:", status ? { status } : {});
+
+  const countResult = await sequelize.query(countQuery, {
+    type: QueryTypes.SELECT,
+    replacements: status ? { status } : {},
+  });
+  console.log("Count result for disputes:", countResult);
+
+  const total = parseInt(countResult[0].total);
+
+  console.log(`Total disputes count: ${total}`);
+
+  return {
+    disputes,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+  console.log("Admin Service - Get All Disputes completed");
+};
+
+// GET ADMIN SERVICE PAYMENTS 
+export const getAllPaymentsAdminService = async () => {
+  try {
+    const payments = await Payment.findAll({
+      order: [["createdAt", "DESC"]],
+      include: [
+        {
+          model: Booking,
+          attributes: ["id", "booking_ref", "status", "payment_mode"],
+          include: [
+            {
+              model: Parcel,
+              as: "parcel",
+              attributes: ["id", "parcel_ref", "price_quote"],
+              include: [
+                {
+                  model: User,
+                  attributes: ["id", "email", "phone_number"],
+                  include: [
+                    {
+                      model: UserProfile,
+                      as: "profile",
+                      attributes: ["name"],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              model: User,
+              as: "traveller",
+              attributes: ["id", "email", "phone_number"],
+              include: [
+                {
+                  model: UserProfile,
+                  as: "profile",
+                  attributes: ["name"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    return payments;
+  } catch (error) {
+    console.error("Admin Payment Service Error:", error);
+    throw error;
+  }
 };

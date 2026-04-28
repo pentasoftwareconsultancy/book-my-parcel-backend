@@ -11,6 +11,11 @@ import placesRoutes from "./modules/places/places.routes.js";
 import matchingRoutes from "./modules/matching/matching.routes.js";
 import ParcelTracking from "./modules/tracking/parcelTracking.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
+import paymentRoutes from "./modules/payment/payment.routes.js";
+import withdrawalRoutes from "./modules/payment/withdrawal.routes.js";
+
+import notificationRoutes from "./modules/notification/notification.routes.js";
+import kycRoutes from "./modules/kyc/kyc.routes.js";
 
 const router = express.Router();
 
@@ -22,6 +27,12 @@ router.use("/user", userRoutes); // /api/user/...
 router.use("/places", placesRoutes); // /api/places/autocomplete
 
 router.use("/tracking", ParcelTracking); // /api/tracking/...
+
+// Payment routes (Razorpay orders and verification)
+router.use("/payment", paymentRoutes); // /api/payment/create-order, /api/payment/verify-payment
+
+// Payment routes (wallet, withdrawal)
+router.use("/payment", withdrawalRoutes); // /api/payment/wallet/*, /api/payment/withdrawal/*, /api/payment/kyc/*
 
 //Travller Routes
 // Booking routes (OTP verification for pickup/delivery)
@@ -41,5 +52,11 @@ router.use("/matching", matchingRoutes); // /api/matching/run-periodic, /api/mat
 
 // Admin routes
 router.use("/admin", adminRoutes); // /api/admin/...
+
+// Notification routes
+router.use("/notifications", notificationRoutes); // /api/notifications
+
+//KYC ROUTES
+router.use("/kyc", kycRoutes); // /api/kyc/...
 
 export default router;

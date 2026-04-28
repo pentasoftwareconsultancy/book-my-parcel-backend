@@ -102,18 +102,18 @@ export const validateCommonFields = [
 // ─── Joi: Parcel Request Schema ───────────────────────────────────────────────
 
 const addressSchema = Joi.object({
-  name:      Joi.string().min(2).max(100).required(),
+  name:      Joi.string().min(2).max(100).optional().allow("", null),
   address:   Joi.string().min(5).max(300).required(),
   city:      Joi.string().min(2).max(100).required(),
   state:     Joi.string().min(2).max(100).required(),
-  pincode:   Joi.string().pattern(/^\d{6}$/).required().messages({
-    "string.pattern.base": "pincode must be exactly 6 digits",
+  pincode:   Joi.string().pattern(/^\d{4,10}$/).required().messages({
+    "string.pattern.base": "pincode must be 4-10 digits",
   }),
   country:   Joi.string().min(2).max(100).required(),
-  phone:     Joi.string().pattern(/^[6-9]\d{9}$|^\+\d{10,15}$/).required().messages({
-    "string.pattern.base": "phone must be 10 digits (Indian) or 10-15 digits with country code",
+  phone:     Joi.string().pattern(/^[+]?[\d\s\-]{7,15}$/).required().messages({
+    "string.pattern.base": "phone must be a valid phone number",
   }),
-  alt_phone: Joi.string().pattern(/^[6-9]\d{9}$|^\+\d{10,15}$|^$/).optional().allow("", null),
+  alt_phone: Joi.string().pattern(/^[+]?[\d\s\-]{7,15}$|^$/).optional().allow("", null),
   aadhar_no: Joi.string().pattern(/^\d{12}$/).optional().allow("", null).messages({
     "string.pattern.base": "aadhar_no must be exactly 12 digits",
   }),
@@ -139,9 +139,9 @@ export const parcelRequestSchema = Joi.object({
   pickup_address:   addressSchema.required(),
   delivery_address: addressSchema.required(),
   // Optional fields for form flow
-  form_step:            Joi.number().integer().min(1).max(3).optional().allow(null),
-  selected_partner_id:  Joi.number().integer().optional().allow(null),
-  selected_acceptance_id: Joi.number().integer().optional().allow(null),
+  form_step:              Joi.number().integer().min(1).max(3).optional().allow(null),
+  selected_partner_id:    Joi.string().uuid().optional().allow("", null),
+  selected_acceptance_id: Joi.string().uuid().optional().allow("", null),
 }).options({ allowUnknown: false });
 
 // ─── Middleware: Parse JSON strings from multipart form-data ──────────────────

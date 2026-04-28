@@ -25,7 +25,7 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls/${{ github.event.pull_request.number }}/merge \
             -d '{
-              "commit_title": "Merge staging → main: Production release",
-              "commit_message": "Auto-merged from staging branch to production",
+              "commit_title": "Merge stage → main: Production release",
+              "commit_message": "Auto-merged from stage branch to production",
               "merge_method": "squash"
             }'

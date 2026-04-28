@@ -5,7 +5,8 @@ let io;
 
 export function initSocket(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: "*" },         // tighten in production
+    cors: { origin: "*", methods: ["GET", "POST"], credentials: true },         // tighten in production
+      transports: ["websocket"], // polling as fallback during network hiccups
   });
 
   io.on("connection", (socket) => {
@@ -13,7 +14,9 @@ export function initSocket(httpServer) {
 
     // Both traveller + individual join the same room by booking_id
     socket.on("join_tracking", ({ booking_id }) => {
-      socket.join(booking_id);
+      const room = `booking_${booking_id}`;
+
+  socket.join(room);
       console.log(`Socket ${socket.id} joined room: ${booking_id}`);
     });
 
