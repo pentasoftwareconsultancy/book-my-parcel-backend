@@ -52,7 +52,15 @@ const TravellerProfile = sequelize.define(
       allowNull: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      { name: "idx_traveller_profiles_user_id", fields: ["user_id"] },
+      { name: "idx_traveller_profiles_status", fields: ["status"] },
+      { name: "idx_traveller_profiles_available", fields: ["is_available"] },
+      { name: "idx_traveller_profiles_status_available", fields: ["status", "is_available"] },
+    ],
+  }
 );
 
 export default TravellerProfile;

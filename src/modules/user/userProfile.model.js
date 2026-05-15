@@ -21,9 +21,21 @@ const UserProfile = sequelize.define(
     lat: DataTypes.DECIMAL,
     lng: DataTypes.DECIMAL,
     avatar_url: DataTypes.STRING,
+    referral_code: {
+      type: DataTypes.STRING(12),
+      allowNull: true,
+      unique: true,
+    },
 
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      { name: "idx_user_profiles_user_id", fields: ["user_id"] },
+      { name: "idx_user_profiles_city", fields: ["city"] },
+      { name: "idx_user_profiles_pincode", fields: ["pincode"] },
+    ],
+  }
 );
 
 export default UserProfile;

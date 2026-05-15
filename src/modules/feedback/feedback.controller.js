@@ -4,7 +4,7 @@
 // call the service, and send back the HTTP response.
 // They should contain NO business logic — just input/output handling.
 
-import { submitFeedback, getFeedbackByBooking, getTravellerFeedback } from "./feedback.service.js";
+import { submitFeedback, getFeedbackByBooking, getTravellerFeedback, updateFeedback } from "./feedback.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
 // responseSuccess / responseError are shared helpers that format all API
 // responses consistently: { success: true, data: ..., message: ... }
@@ -53,5 +53,18 @@ export async function getTravellerFeedbackController(req, res) {
     return responseSuccess(res, feedbacks, "OK");
   } catch (error) {
     return responseError(res, error.message, 500);
+  }
+}
+
+// ─── PUT /feedback/booking/:bookingId ─────────────────────────────────────────
+export async function updateFeedbackController(req, res) {
+  try {
+    const feedback = await updateFeedback(req.user.id, req.params.bookingId, req.body);
+    return responseSuccess(res, feedback, "Feedback updated successfully");
+  } catch (error) {
+    const status =
+      error.message.includes("Unauthorized") ? 403 :
+      error.message.includes("not found")    ? 404 : 500;
+    return responseError(res, error.message, status);
   }
 }

@@ -1,5 +1,5 @@
 // Migration to add sequence_order column to route_places table
-export async function up(queryInterface, Sequelize) {
+export const up = async (queryInterface, Sequelize) => {
   await queryInterface.addColumn('route_places', 'sequence_order', {
     type: Sequelize.INTEGER,
     allowNull: true,
@@ -12,10 +12,10 @@ export async function up(queryInterface, Sequelize) {
   });
 
   console.log('✅ Added sequence_order column to route_places table');
-}
+};
 
-export async function down(queryInterface, Sequelize) {
+export const down = async (queryInterface, Sequelize) => {
   await queryInterface.removeIndex('route_places', 'idx_route_places_route_sequence');
   await queryInterface.removeColumn('route_places', 'sequence_order');
   console.log('✅ Removed sequence_order column from route_places table');
-}
+};

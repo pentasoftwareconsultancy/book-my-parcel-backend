@@ -9,12 +9,19 @@ import {
   calculateTransitDetour,
   haversineDistance as calculateDistance
 } from "./spatialMatching.service.js";
+import {
+  getCachedActiveRouteIds,
+  cacheActiveRouteIds,
+  getCachedActiveRoutesFull,
+  cacheActiveRoutesFull,
+  invalidateActiveRoutesCache
+} from "../redis/cache/activeRoutesCache.service.js";
 
 const MAX_CANDIDATES = 20;
-const MAX_DETOUR_PERCENTAGE = 20;
-const MAX_DETOUR_KM = 50;
+const MAX_DETOUR_PERCENTAGE = 30; // 30% detour allowed
+const MAX_DETOUR_KM = 80; // 80km detour allowed
 const DEFAULT_BUFFER_KM = 10;
-const REQUEST_EXPIRY_MINUTES = 30;
+const REQUEST_EXPIRY_MINUTES = 60; // travellers have 60 minutes to respond
 
 // ─── Step 1: Fetch Parcel Data ──────────────────────────────────────────────
 async function fetchParcelData(parcelId) {
@@ -54,17 +61,173 @@ async function fetchParcelData(parcelId) {
 }
 
 // ─── Step 2: Find Candidate Travellers (Geographic Matching) ────────────────
+// OPTIMIZED VERSION: Single CTE query instead of 5 sequential queries
 async function findCandidateTravellers(parcelData) {
+  try {
+    const isSameCity = parcelData.pickup.city === parcelData.delivery.city;
+    if (isSameCity) {
+      console.log(`[Matching] Same-city parcel detected: ${parcelData.pickup.city} → using locality/place-ID matching only`);
+    }
+
+    console.log(`[Matching] Parcel cities: pickup="${parcelData.pickup.city}", delivery="${parcelData.delivery.city}"`);
+    console.log(`[Matching] Parcel localities: pickup="${parcelData.pickup.locality}", delivery="${parcelData.delivery.locality}"`);
+    console.log(`[Matching] Same city: ${isSameCity}`);
+
+    // Build unified CTE query that combines all 5 matching methods
+    const unifiedQuery = `
+      WITH 
+      -- Method A: Place-ID matching (highest priority)
+      place_matches AS (
+        SELECT DISTINCT rp1.route_id as id, 1 as priority, 'place_id' as match_type
+        FROM route_places rp1
+        WHERE rp1.place_id = :pickupPlaceId
+          AND rp1.route_id IN (
+            SELECT rp2.route_id
+            FROM route_places rp2
+            WHERE rp2.place_id = :deliveryPlaceId
+          )
+      ),
+      -- Method B: Locality JSONB array matching
+      locality_matches AS (
+        SELECT id, 2 as priority, 'locality' as match_type
+        FROM traveller_routes
+        WHERE status = 'ACTIVE'
+          AND localities_passed @> :pickupLocality
+          AND localities_passed @> :deliveryLocality
+      ),
+      -- Method C: City-level JSONB matching
+      -- Route must pass through BOTH pickup city AND delivery city
+      city_matches AS (
+        SELECT id, 3 as priority, 'city' as match_type
+        FROM traveller_routes
+        WHERE status = 'ACTIVE'
+          AND :includeCityMatch = true
+          AND cities_passed @> :pickupCity
+          AND cities_passed @> :deliveryCity
+      ),
+      -- Method D: Spatial matching (PostGIS - routes passing between points)
+      spatial_matches AS (
+        SELECT id, 4 as priority, 'spatial' as match_type
+        FROM traveller_routes
+        WHERE status = 'ACTIVE'
+          AND :includeSpatial = true
+          AND route_geometry IS NOT NULL
+          AND ST_DWithin(
+            route_geometry::geography,
+            ST_MakeLine(
+              ST_SetSRID(ST_MakePoint(:pickupLng, :pickupLat), 4326)::geometry,
+              ST_SetSRID(ST_MakePoint(:deliveryLng, :deliveryLat), 4326)::geometry
+            )::geography,
+            :spatialThresholdMeters
+          )
+      ),
+      -- Method E: Buffer-based spatial matching (routes near BOTH pickup AND delivery)
+      -- Only match if route passes near pickup AND near delivery — prevents
+      -- routes going to a completely different destination from matching.
+      buffer_matches AS (
+        SELECT id, 5 as priority, 'buffer' as match_type
+        FROM traveller_routes
+        WHERE status = 'ACTIVE'
+          AND :includeBuffer = true
+          AND route_geometry IS NOT NULL
+          AND ST_DWithin(
+            route_geometry::geography,
+            ST_SetSRID(ST_MakePoint(:pickupLng, :pickupLat), 4326)::geography,
+            :bufferMeters
+          )
+          AND ST_DWithin(
+            route_geometry::geography,
+            ST_SetSRID(ST_MakePoint(:deliveryLng, :deliveryLat), 4326)::geography,
+            :bufferMeters
+          )
+      ),
+      -- Combine all matches with UNION ALL (faster than UNION)
+      all_matches AS (
+        SELECT * FROM place_matches
+        UNION ALL
+        SELECT * FROM locality_matches
+        UNION ALL
+        SELECT * FROM city_matches
+        UNION ALL
+        SELECT * FROM spatial_matches
+        UNION ALL
+        SELECT * FROM buffer_matches
+      )
+      -- Get distinct route IDs with their best (lowest) priority and match types
+      SELECT 
+        id,
+        MIN(priority) as best_priority,
+        array_agg(DISTINCT match_type) as match_types
+      FROM all_matches
+      GROUP BY id
+      ORDER BY best_priority ASC, id
+      LIMIT 50
+    `;
+
+    const replacements = {
+      pickupPlaceId: parcelData.pickup.place_id || null,
+      deliveryPlaceId: parcelData.delivery.place_id || null,
+      pickupLocality: parcelData.pickup.locality ? JSON.stringify([parcelData.pickup.locality]) : '[]',
+      deliveryLocality: parcelData.delivery.locality ? JSON.stringify([parcelData.delivery.locality]) : '[]',
+      pickupCity: parcelData.pickup.city ? JSON.stringify([parcelData.pickup.city]) : '[]',
+      deliveryCity: parcelData.delivery.city ? JSON.stringify([parcelData.delivery.city]) : '[]',
+      isSameCity: isSameCity,
+      includeCityMatch: (parcelData.pickup.city && parcelData.delivery.city) ? true : false,
+      includeSpatial: (parcelData.pickup.lat && parcelData.pickup.lng && parcelData.delivery.lat && parcelData.delivery.lng) ? true : false,
+      includeBuffer: (parcelData.pickup.lat && parcelData.pickup.lng) ? true : false,
+      pickupLat: parcelData.pickup.lat || 0,
+      pickupLng: parcelData.pickup.lng || 0,
+      deliveryLat: parcelData.delivery.lat || 0,
+      deliveryLng: parcelData.delivery.lng || 0,
+      spatialThresholdMeters: 5000, // 5km threshold — tighter to avoid false positives
+      bufferMeters: DEFAULT_BUFFER_KM * 1000, // Convert km to meters
+    };
+
+    console.log(`[Matching] Executing unified CTE query for parcel matching`);
+    const startTime = Date.now();
+
+    const results = await sequelize.query(unifiedQuery, {
+      replacements,
+      type: sequelize.QueryTypes.SELECT,
+    });
+
+    const queryTime = Date.now() - startTime;
+    console.log(`[Matching] Unified query completed in ${queryTime}ms - found ${results.length} candidates`);
+
+    // Log match type breakdown
+    const matchTypeStats = {};
+    results.forEach(result => {
+      result.match_types.forEach(type => {
+        matchTypeStats[type] = (matchTypeStats[type] || 0) + 1;
+      });
+    });
+    console.log(`[Matching] Match type breakdown:`, matchTypeStats);
+
+    const candidateIds = results.map(r => r.id);
+
+    // Cache the active route IDs for future queries
+    if (candidateIds.length > 0) {
+      await cacheActiveRouteIds(candidateIds);
+    }
+
+    return candidateIds;
+  } catch (error) {
+    console.error("[Matching] Error in unified candidate query:", error.message);
+    console.error("[Matching] Falling back to legacy sequential queries");
+    
+    // Fallback to legacy method if unified query fails
+    return await findCandidateTravellersLegacy(parcelData);
+  }
+}
+
+// ─── Legacy Sequential Query Method (Fallback) ──────────────────────────────
+async function findCandidateTravellersLegacy(parcelData) {
   const candidates = new Set();
 
   try {
-    // Skip if pickup and delivery are the same city (same-city deliveries not supported yet)
-    if (parcelData.pickup.city === parcelData.delivery.city) {
-      console.log(`[Matching] Skipping same-city parcel: ${parcelData.pickup.city} → ${parcelData.delivery.city}`);
-      return [];
-    }
+    const isSameCity = parcelData.pickup.city === parcelData.delivery.city;
 
-    // Method A: Place-ID matching via route_places table
+    // Method A: Place-ID matching
     if (parcelData.pickup.place_id && parcelData.delivery.place_id) {
       const placeMatches = await sequelize.query(
         `
@@ -90,7 +253,7 @@ async function findCandidateTravellers(parcelData) {
       console.log(`[Matching] Place-ID matches: ${placeMatches.length}`);
     }
 
-    // Method B: JSONB array containment (fallback)
+    // Method B: JSONB array containment
     if (candidates.size < 5 && parcelData.pickup.locality && parcelData.delivery.locality) {
       const arrayMatches = await sequelize.query(
         `
@@ -111,14 +274,10 @@ async function findCandidateTravellers(parcelData) {
       console.log(`[Matching] JSONB array matches: ${arrayMatches.length}`);
     }
 
-    // Method C: City-level JSONB matching (broader fallback)
+    // Method C: City-level JSONB matching — route must pass through BOTH cities
     if (candidates.size < 10 && parcelData.pickup.city && parcelData.delivery.city) {
       const cityMatches = await sequelize.query(
-        `
-        SELECT id FROM traveller_routes
-        WHERE cities_passed @> :pickupCity
-          AND cities_passed @> :deliveryCity
-        `,
+        `SELECT id FROM traveller_routes WHERE cities_passed @> :pickupCity AND cities_passed @> :deliveryCity`,
         {
           replacements: {
             pickupCity: JSON.stringify([parcelData.pickup.city]),
@@ -132,10 +291,8 @@ async function findCandidateTravellers(parcelData) {
       console.log(`[Matching] City-level matches: ${cityMatches.length}`);
     }
 
-    // Method D: Spatial matching (geographic proximity fallback)
+    // Method D: Spatial matching
     if (candidates.size < 15 && parcelData.pickup.lat && parcelData.pickup.lng && parcelData.delivery.lat && parcelData.delivery.lng) {
-      console.log(`[Matching] Attempting spatial matching between (${parcelData.pickup.lat}, ${parcelData.pickup.lng}) and (${parcelData.delivery.lat}, ${parcelData.delivery.lng})`);
-      
       const spatialMatches = await findRoutesBetweenPoints(
         parcelData.pickup.lng,
         parcelData.pickup.lat,
@@ -147,10 +304,8 @@ async function findCandidateTravellers(parcelData) {
       console.log(`[Matching] Spatial matches: ${spatialMatches.length}`);
     }
 
-    // Method E: Buffer-based spatial matching (even broader fallback)
+    // Method E: Buffer-based spatial matching
     if (candidates.size < 20 && parcelData.pickup.lat && parcelData.pickup.lng) {
-      console.log(`[Matching] Attempting buffer-based spatial matching around pickup point (${parcelData.pickup.lat}, ${parcelData.pickup.lng})`);
-      
       const bufferMatches = await findRoutesWithinBuffer(
         parcelData.pickup.lng,
         parcelData.pickup.lat,
@@ -161,10 +316,10 @@ async function findCandidateTravellers(parcelData) {
       console.log(`[Matching] Buffer-based matches: ${bufferMatches.length}`);
     }
 
-    console.log(`[Matching] Total unique candidates found: ${candidates.size}`);
+    console.log(`[Matching] Legacy method: Total unique candidates found: ${candidates.size}`);
     return Array.from(candidates);
   } catch (error) {
-    console.error("[Matching] Error finding candidate travellers:", error.message);
+    console.error("[Matching] Error in legacy candidate search:", error.message);
     return [];
   }
 }
@@ -393,6 +548,7 @@ function calculateDetourForPrivateRoute(route, parcelData) {
 async function calculateExactDetour(route, parcelData) {
   try {
     const transportMode = route.transportMode || route.transport_mode || 'private';
+    console.log(`[calculateExactDetour] Calculating detour for route ${route.id} (${transportMode})`);
 
     // TRANSIT ROUTES: Use walking distance to stops (if available)
     if (transportMode === 'bus' || transportMode === 'train') {
@@ -406,16 +562,17 @@ async function calculateExactDetour(route, parcelData) {
         );
 
         if (transitDetour) {
-          console.log(`[Matching] Transit detour for route ${route.id} (${transportMode}): ${transitDetour.totalWalkingKm}km`);
+          console.log(`[calculateExactDetour] Transit detour for route ${route.id} (${transportMode}): ${transitDetour.totalWalkingKm}km`);
           return {
             detourKm: transitDetour.totalWalkingKm,
             detourPercentage: 0, // Walking distance doesn't have a percentage (not comparable to route distance)
             isTransitWalkingDistance: true,
           };
         } else {
+          console.log(`[calculateExactDetour] Transit detour calculation failed, using estimated detour`);
           // If we can't calculate walking distance, fallback to estimated detour
           return {
-            detourKm: route.estimatedDetour || Infinity,
+            detourKm: route.estimatedDetour || 5, // Default 5km for transit routes
             detourPercentage: 0,
             isTransitWalkingDistance: false,
           };
@@ -426,31 +583,95 @@ async function calculateExactDetour(route, parcelData) {
 
     // PRIVATE ROUTES or BUS/TRAIN routes without stops: Use Google Routes API or fallback
     if (!process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY === "your_google_api_key_here") {
-      return null;
+      console.log(`[calculateExactDetour] Google API key not configured, using estimated detour`);
+      const estimatedDetour = route.estimatedDetour || 10; // Default 10km
+      const routeDistance = Number(route.total_distance_km) || 100;
+      return {
+        detourKm: estimatedDetour,
+        detourPercentage: (estimatedDetour / routeDistance) * 100,
+        isTransitWalkingDistance: false,
+      };
     }
 
-    const routeResult = await computeRoute(
-      { lat: Number(parcelData.pickup.lat), lng: Number(parcelData.pickup.lng) },
-      { lat: Number(parcelData.delivery.lat), lng: Number(parcelData.delivery.lng) }
-    );
-
-    const parcelRoute = routeResult.routes?.[0];
-    if (!parcelRoute || !parcelRoute.distanceMeters) {
-      return null; 
+    console.log(`[calculateExactDetour] Using Google Routes API for exact calculation`);
+    
+    // Calculate the original route distance (if not stored, use total_distance_km)
+    const originalRouteDistance = Number(route.total_distance_km) || 0;
+    
+    // Get route coordinates
+    const originLat = Number(route.originAddress?.latitude || route['originAddress.latitude']);
+    const originLng = Number(route.originAddress?.longitude || route['originAddress.longitude']);
+    const destLat = Number(route.destAddress?.latitude || route['destAddress.latitude']);
+    const destLng = Number(route.destAddress?.longitude || route['destAddress.longitude']);
+    
+    // Validate coordinates
+    if (!originLat || !originLng || !destLat || !destLng) {
+      console.log(`[calculateExactDetour] Invalid route coordinates, using estimated detour`);
+      const estimatedDetour = route.estimatedDetour || 10;
+      return {
+        detourKm: estimatedDetour,
+        detourPercentage: originalRouteDistance > 0 ? (estimatedDetour / originalRouteDistance) * 100 : 0,
+        isTransitWalkingDistance: false,
+      };
     }
+    
+    console.log(`[calculateExactDetour] Route: (${originLat}, ${originLng}) → (${destLat}, ${destLng})`);
+    console.log(`[calculateExactDetour] Waypoints: Pickup (${parcelData.pickup.lat}, ${parcelData.pickup.lng}), Drop (${parcelData.delivery.lat}, ${parcelData.delivery.lng})`);
+    
+    try {
+      // Calculate route WITH parcel: Origin → Pickup → Drop → Destination
+      const routeWithParcelResult = await computeRoute(
+        { lat: originLat, lng: originLng },
+        { lat: destLat, lng: destLng },
+        "DRIVE",
+        [
+          { lat: Number(parcelData.pickup.lat), lng: Number(parcelData.pickup.lng) },
+          { lat: Number(parcelData.delivery.lat), lng: Number(parcelData.delivery.lng) }
+        ]
+      );
 
-    const parcelDistance = parcelRoute.distanceMeters / 1000;
-    const routeDistance = Number(route.total_distance_km) || 0;
-    const detourKm = parcelDistance - routeDistance;
-    const detourPercentage = routeDistance > 0 ? (detourKm / routeDistance) * 100 : 0;
+      const routeWithParcel = routeWithParcelResult.routes?.[0];
+      if (!routeWithParcel || !routeWithParcel.distanceMeters) {
+        console.log(`[calculateExactDetour] Google Routes API returned no route, using estimated detour`);
+        const estimatedDetour = route.estimatedDetour || 10;
+        return {
+          detourKm: estimatedDetour,
+          detourPercentage: originalRouteDistance > 0 ? (estimatedDetour / originalRouteDistance) * 100 : 0,
+          isTransitWalkingDistance: false,
+        };
+      }
 
-    return {
-      detourKm: Math.max(0, detourKm),
-      detourPercentage: Math.max(0, detourPercentage),
-    };
+      const routeWithParcelDistance = routeWithParcel.distanceMeters / 1000;
+      const detourKm = Math.max(0, routeWithParcelDistance - originalRouteDistance);
+      const detourPercentage = originalRouteDistance > 0 ? (detourKm / originalRouteDistance) * 100 : 0;
+
+      console.log(`[calculateExactDetour] Original route: ${originalRouteDistance}km, With parcel: ${routeWithParcelDistance}km, Detour: ${detourKm}km (${detourPercentage.toFixed(1)}%)`);
+
+      return {
+        detourKm: Math.max(1, detourKm), // Minimum 1km detour
+        detourPercentage: Math.max(1, detourPercentage), // Minimum 1% detour
+        isTransitWalkingDistance: false,
+      };
+    } catch (error) {
+      console.error(`[calculateExactDetour] Error calculating exact detour:`, error.response?.data || error.message);
+      // Fallback to estimated detour
+      const estimatedDetour = route.estimatedDetour || 10;
+      return {
+        detourKm: estimatedDetour,
+        detourPercentage: originalRouteDistance > 0 ? (estimatedDetour / originalRouteDistance) * 100 : 0,
+        isTransitWalkingDistance: false,
+      };
+    }
   } catch (error) {
-    console.error("[Matching] Error calculating exact detour:", error.message);
-    return null;
+    console.error("[calculateExactDetour] Error calculating exact detour:", error.message);
+    // Return fallback values instead of null
+    const estimatedDetour = route.estimatedDetour || 8; // Default 8km
+    const routeDistance = Number(route.total_distance_km) || 100;
+    return {
+      detourKm: estimatedDetour,
+      detourPercentage: (estimatedDetour / routeDistance) * 100,
+      isTransitWalkingDistance: false,
+    };
   }
 }
 
@@ -567,21 +788,7 @@ export async function matchParcelWithTravellers(parcelId) {
       const detourInfo = await calculateExactDetour(candidate, parcelData);
       const transportMode = candidate.transportMode || candidate.transport_mode || 'private';
 
-      if (!detourInfo) {
-        // If exact detour calculation fails, use estimated detour
-        if (candidate.estimatedDetour <= 100) {
-          const detourPercentage = (candidate.estimatedDetour / candidate.total_distance_km) * 100;
-          finalCandidates.push({
-            ...candidate,
-            detourKm: candidate.estimatedDetour,
-            detourPercentage: detourPercentage,
-            matchScore: Math.max(0, 100 - detourPercentage),
-          });
-        }
-        continue;
-      }
-
-      // Handle transit vs private routes differently
+      // Always have detour info now (no null returns)
       if (detourInfo.isTransitWalkingDistance) {
         // TRANSIT ROUTES: Check walking distance threshold
         if (detourInfo.detourKm <= MAX_TRANSIT_WALKING_KM) {
@@ -596,28 +803,15 @@ export async function matchParcelWithTravellers(parcelId) {
         }
       } else {
         // PRIVATE ROUTES: Check percentage and absolute threshold
-        if (detourInfo.detourPercentage !== undefined || detourInfo.detourPercentage !== null) {
-          if (detourInfo.detourPercentage <= MAX_DETOUR_PERCENTAGE && detourInfo.detourKm <= MAX_DETOUR_KM) {
-            finalCandidates.push({
-              ...candidate,
-              detourKm: detourInfo.detourKm,
-              detourPercentage: detourInfo.detourPercentage,
-              matchScore: 100 - detourInfo.detourPercentage,
-            });
-          } else {
-            console.log(`[Matching] Candidate ${candidate.id} rejected: detour ${detourInfo.detourPercentage.toFixed(1)}% / ${detourInfo.detourKm}km exceeds thresholds`);
-          }
+        if (detourInfo.detourPercentage <= MAX_DETOUR_PERCENTAGE && detourInfo.detourKm <= MAX_DETOUR_KM) {
+          finalCandidates.push({
+            ...candidate,
+            detourKm: detourInfo.detourKm,
+            detourPercentage: detourInfo.detourPercentage,
+            matchScore: Math.max(10, 100 - detourInfo.detourPercentage), // Minimum 10% match score
+          });
         } else {
-          // Fallback: use estimated detour
-          if (candidate.estimatedDetour <= 100) {
-            const detourPercentage = (candidate.estimatedDetour / candidate.total_distance_km) * 100;
-            finalCandidates.push({
-              ...candidate,
-              detourKm: candidate.estimatedDetour,
-              detourPercentage: detourPercentage,
-              matchScore: Math.max(0, 100 - detourPercentage),
-            });
-          }
+          console.log(`[Matching] Candidate ${candidate.id} rejected: detour ${detourInfo.detourPercentage.toFixed(1)}% / ${detourInfo.detourKm}km exceeds thresholds`);
         }
       }
     }

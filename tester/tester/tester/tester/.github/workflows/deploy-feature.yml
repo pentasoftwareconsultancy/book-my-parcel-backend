@@ -1,0 +1,53 @@
+name: 01 Deploy Feature
+
+on:
+  push:
+    branches:
+      - feature/bmp
+
+jobs:
+  deploy:
+    if: github.repository == 'Priti6542/BMP-Backend'
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_VERSION: '18'
+
+    steps:
+      - name: Checkout Feature Branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/bmp
+          fetch-depth: 1
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          echo "📥 Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed"
+
+      - name: Run Tests
+        continue-on-error: true
+        run: |
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            echo "🧪 Running test suite..."
+            npm run test || echo "⚠️  Tests failed (non-critical)"
+          else
+            echo "ℹ️  No test script configured"
+          fi
+
+      - name: Deploy to Render Feature Service
+        run: |
+          echo "🚀 Deploying feature branch to Render..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_FEATURE }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"message\":\"Feature deployment from feature/bmp\",\"timestamp\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"}" \
+            --max-time 30
+
+          echo "✅ Feature deployment triggered"

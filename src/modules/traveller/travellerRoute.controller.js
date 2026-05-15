@@ -6,7 +6,8 @@ import {
   deleteTravellerRoute,
 } from "./travellerRoute.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
-import { matchRouteWithExistingParcels } from "../../services/matchingEngine.service.js";
+import { enqueueAsyncTask } from "../../jobs/asyncTasks.queue.js";
+import { to12h } from "../../utils/time.util.js";
 
 // Create a new traveller route
 export async function createRoute(req, res) {
@@ -18,13 +19,8 @@ export async function createRoute(req, res) {
     const routeRef = `TR-${new Date().getFullYear()}-${String(route.id).slice(0, 8).toUpperCase()}`;
 
     // Trigger matching with existing parcels in the background
-    setImmediate(async () => {
-      try {
-        const matchResult = await matchRouteWithExistingParcels(route.id);
-        console.log(`[TravellerRoute] Route ${route.id} matched with ${matchResult.matchedParcels} existing parcels`);
-      } catch (error) {
-        console.error(`[TravellerRoute] Error matching route ${route.id} with existing parcels:`, error.message);
-      }
+    await enqueueAsyncTask("match_route_with_existing_parcels", {
+      routeId: route.id,
     });
 
     return responseSuccess(res, {
@@ -40,8 +36,10 @@ export async function createRoute(req, res) {
         formatted_address: destAddress.formatted_address || 
           `${destAddress.address}, ${destAddress.city}, ${destAddress.pincode}`,
       },
-      departure_time: route.departure_time,
+      departure_time: to12h(route.departure_time),
       departure_date: route.departure_date,
+      arrival_time: to12h(route.arrival_time),
+      arrival_date: route.arrival_date,
       is_recurring: route.is_recurring,
       recurring_days: route.recurring_days,
       recurring_start_date: route.recurring_start_date,
@@ -76,7 +74,14 @@ export async function getRoutes(req, res) {
     const userId = req.user.id;
     const routes = await getTravellerRoutes(userId);
 
-    return responseSuccess(res, routes, "Routes retrieved successfully");
+    // Convert time fields to 12h format for display
+    const formatted = routes.map((r) => ({
+      ...r.toJSON(),
+      departure_time: to12h(r.departure_time),
+      arrival_time:   to12h(r.arrival_time),
+    }));
+
+    return responseSuccess(res, formatted, "Routes retrieved successfully");
   } catch (error) {
     console.error("[TravellerRoute] Get routes error:", error);
     return responseError(res, error.message, 500);

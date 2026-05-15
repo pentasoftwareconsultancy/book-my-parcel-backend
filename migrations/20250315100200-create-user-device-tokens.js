@@ -1,4 +1,4 @@
-export async function up(queryInterface, Sequelize) {
+export const up = async (queryInterface, Sequelize) => {
   await queryInterface.createTable("user_device_tokens", {
     id: {
       type: Sequelize.UUID,
@@ -34,8 +34,8 @@ export async function up(queryInterface, Sequelize) {
   await queryInterface.addIndex("user_device_tokens", ["token"], {
     name: "idx_user_device_tokens_token",
   });
-}
+};
 
-export async function down(queryInterface, Sequelize) {
+export const down = async (queryInterface, Sequelize) => {
   await queryInterface.dropTable("user_device_tokens");
-}
+};

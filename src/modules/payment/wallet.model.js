@@ -12,6 +12,7 @@ const Wallet = sequelize.define(
     user_id: {
       type: DataTypes.UUID,
       allowNull: false,
+      unique: true,
     },
     balance: {
       type: DataTypes.DECIMAL,

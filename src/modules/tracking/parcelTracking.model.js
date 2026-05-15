@@ -37,6 +37,10 @@ const ParcelTracking = sequelize.define(
   {
     timestamps: true,
     tableName: "parcel_trackings",
+    indexes: [
+      { name: "idx_parcel_trackings_booking_id", fields: ["booking_id"] },
+      { name: "idx_parcel_trackings_status", fields: ["status"] },
+    ],
   }
 );
 

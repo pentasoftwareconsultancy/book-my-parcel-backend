@@ -1,10 +1,16 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { getOrCache } from "../utils/cache.util.js";
 
 dotenv.config();
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_ADDRESS_VALIDATION_API_KEY = process.env.GOOGLE_ADDRESS_VALIDATION_API_KEY || GOOGLE_API_KEY;
+
+// Cache TTLs
+const GEOCODE_TTL    = 60 * 60 * 24 * 7; // 7 days — addresses don't change
+const PLACE_TTL      = 60 * 60 * 24;     // 24 hours — place details are stable
+const ROUTE_TTL      = 60 * 60 * 6;      // 6 hours — routes change with road conditions
 
 // ─── Address Validation API (India ML) ────────────────────────────────────────
 export async function validateAddress(addressLine) {
@@ -24,14 +30,32 @@ export async function validateAddress(addressLine) {
 
 // ─── Geocoding API ────────────────────────────────────────────────────────────
 export async function geocodeAddress(addressString) {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-    addressString
-  )}&region=IN&key=${GOOGLE_API_KEY}`;
-  const response = await axios.get(url);
-  if (response.data.status !== "OK" && response.data.status !== "ZERO_RESULTS") {
-    throw new Error(`Geocoding API error: ${response.data.status}`);
+  if (!GOOGLE_API_KEY || GOOGLE_API_KEY === "your_google_api_key_here") {
+    return {
+      status: "REQUEST_DENIED",
+      results: [],
+      error_message: "GOOGLE_API_KEY is missing or placeholder.",
+    };
   }
-  return response.data;
+
+  // Normalise the key so minor whitespace differences don't cause cache misses
+  const cacheKey = `geocode:${addressString.trim().toLowerCase().replace(/\s+/g, " ")}`;
+
+  return getOrCache(cacheKey, async () => {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+      addressString
+    )}&region=IN&key=${GOOGLE_API_KEY}`;
+    const response = await axios.get(url);
+    if (response.data.status !== "OK" && response.data.status !== "ZERO_RESULTS") {
+      console.warn(`[Geocoding] API returned status: ${response.data.status} for "${addressString}"`);
+      return {
+        status: response.data.status,
+        results: [],
+        error_message: response.data.error_message,
+      };
+    }
+    return response.data;
+  }, GEOCODE_TTL);
 }
 
 // Helper to extract global plus code from geocode response (if needed)
@@ -48,69 +72,65 @@ export async function getAddressDescriptors(lat, lng) {
 
 // ─── Places API (New) – Place Details with containingPlaces ──────────────────
 export async function getPlaceDetails(placeId) {
-  const url = `https://places.googleapis.com/v1/places/${placeId}`;
-  const response = await axios.get(url, {
-    params: { key: GOOGLE_API_KEY },
-    headers: {
-      "X-Goog-FieldMask":
-        "id,displayName,formattedAddress,addressComponents,containingPlaces,plusCode",
-    },
-  });
-  return response.data;
+  const cacheKey = `place:${placeId}`;
+
+  return getOrCache(cacheKey, async () => {
+    const url = `https://places.googleapis.com/v1/places/${placeId}`;
+    const response = await axios.get(url, {
+      params: { key: GOOGLE_API_KEY },
+      headers: {
+        "X-Goog-FieldMask":
+          "id,displayName,formattedAddress,addressComponents,containingPlaces,plusCode",
+      },
+    });
+    return response.data;
+  }, PLACE_TTL);
 }
 
 // ─── Routes API (Essentials) ─────────────────────────────────────────────────
 export async function computeRoute(originLatLng, destLatLng, travelMode = "DRIVE") {
-  const url = `https://routes.googleapis.com/directions/v2:computeRoutes?key=${GOOGLE_API_KEY}`;
-  
-  // For TRANSIT mode, we need different field mask to include transitDetails
-  let fieldMask = "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction";
-  
-  if (travelMode === "TRANSIT") {
-    fieldMask = "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.transitDetails";
-  }
-  
-  const payload = {
-    origin: {
-      location: {
-        latLng: {
-          latitude: originLatLng.lat,
-          longitude: originLatLng.lng,
-        },
-      },
-    },
-    destination: {
-      location: {
-        latLng: {
-          latitude: destLatLng.lat,
-          longitude: destLatLng.lng,
-        },
-      },
-    },
-    travelMode: travelMode, // "DRIVE" or "TRANSIT"
-    computeAlternativeRoutes: false,
-    languageCode: "en-IN",
-    units: "METRIC",
-  };
-  
-  // Only set routing preference and modifiers for DRIVE mode
-  // TRANSIT mode doesn't support these options
-  if (travelMode === "DRIVE") {
-    payload.routingPreference = "TRAFFIC_UNAWARE";
-    payload.routeModifiers = {
-      avoidTolls: false,
-      avoidHighways: false,
-      avoidFerries: false,
+  // Round coordinates to 4 decimal places (~11m precision) so nearby points
+  // share a cache entry instead of generating unique keys for every GPS jitter.
+  const oLat = originLatLng.lat.toFixed(4);
+  const oLng = originLatLng.lng.toFixed(4);
+  const dLat = destLatLng.lat.toFixed(4);
+  const dLng = destLatLng.lng.toFixed(4);
+
+  // TRANSIT routes depend on real-time schedules — don't cache them.
+  const shouldCache = travelMode !== "TRANSIT";
+  const cacheKey = `route:${travelMode}:${oLat},${oLng}:${dLat},${dLng}`;
+
+  const fetchRoute = async () => {
+    let fieldMask = "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction";
+    if (travelMode === "TRANSIT") {
+      fieldMask += ",routes.legs.steps.transitDetails";
+    }
+
+    const payload = {
+      origin:      { location: { latLng: { latitude: originLatLng.lat, longitude: originLatLng.lng } } },
+      destination: { location: { latLng: { latitude: destLatLng.lat,   longitude: destLatLng.lng   } } },
+      travelMode,
+      computeAlternativeRoutes: false,
+      languageCode: "en-IN",
+      units: "METRIC",
     };
+
+    if (travelMode === "DRIVE") {
+      payload.routingPreference = "TRAFFIC_UNAWARE";
+      payload.routeModifiers = { avoidTolls: false, avoidHighways: false, avoidFerries: false };
+    }
+
+    const url = `https://routes.googleapis.com/directions/v2:computeRoutes?key=${GOOGLE_API_KEY}`;
+    const response = await axios.post(url, payload, {
+      headers: { "X-Goog-FieldMask": fieldMask },
+    });
+    return response.data;
+  };
+
+  if (shouldCache) {
+    return getOrCache(cacheKey, fetchRoute, ROUTE_TTL);
   }
-  
-  const response = await axios.post(url, payload, {
-    headers: {
-      "X-Goog-FieldMask": fieldMask,
-    },
-  });
-  
-  return response.data;
+  return fetchRoute();
 }
 
 // ─── Routes API (Pro) - Compute Route Matrix with Traffic ──────────────────

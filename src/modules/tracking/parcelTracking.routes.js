@@ -5,17 +5,34 @@ import {
   handleUpdateLocation,
   handleGetTracking,
   handleCompleteDelivery,
+  handleUploadProof,
 } from "./parcelTracking.controller.js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js"; // unchanged, just imported
-import { authorizeRoles } from "./tracking.middleware.js";            // your own
+import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../../middlewares/tracking.middleware.js";
+import { upload } from "../../utils/fileUpload.util.js";
+import { generalLimiter, sensitiveLimiter } from "../../middlewares/rateLimit.middleware.js";
 
 const router = express.Router();
 
-router.use(authMiddleware);
+// ── Public route — no auth needed (shareable tracking link) ──────────────────
+// Anyone with the booking_id can view live location (no sensitive data exposed)
+router.get("/public/:booking_id", generalLimiter, handleGetTracking);
 
-router.post  ("/initiate",    authorizeRoles("TRAVELLER"),           handleInitiateTracking);
-router.patch ("/location",    authorizeRoles("TRAVELLER"),           handleUpdateLocation);
+// ── Authenticated routes ──────────────────────────────────────────────────────
+router.use(authMiddleware, generalLimiter);
+
+router.post  ("/initiate",    sensitiveLimiter, authorizeRoles("TRAVELLER"),           handleInitiateTracking);
+router.patch ("/location",    sensitiveLimiter, authorizeRoles("TRAVELLER"),           handleUpdateLocation);
 router.get   ("/:booking_id", authorizeRoles("INDIVIDUAL", "ADMIN"), handleGetTracking);
-router.patch ("/complete",    authorizeRoles("TRAVELLER"),           handleCompleteDelivery);
+router.patch ("/complete",    sensitiveLimiter, authorizeRoles("TRAVELLER"),           handleCompleteDelivery);
+
+// ── Proof of delivery / pickup photo upload ───────────────────────────────────
+router.post(
+  "/proof",
+  sensitiveLimiter,
+  authorizeRoles("TRAVELLER"),
+  upload.single("proof_photo"),
+  handleUploadProof
+);
 
 export default router;

@@ -50,6 +50,11 @@ const RoutePlace = sequelize.define(
     underscored: true,
     createdAt: "created_at",
     updatedAt: false,
+    indexes: [
+      { name: "idx_route_places_route_id", fields: ["route_id"] },
+      { name: "idx_route_places_place_type_place_id", fields: ["place_type", "place_id"] },
+      { name: "idx_route_places_route_sequence", fields: ["route_id", "sequence_order"] },
+    ],
   }
 );
 

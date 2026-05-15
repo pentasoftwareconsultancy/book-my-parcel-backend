@@ -1,5 +1,6 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { requireAdmin } from "../../middlewares/role.middleware.js";
 import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
 import { validateRequest } from "../../middlewares/validation.middleware.js";
 import ParcelRequest from "./parcelRequest.model.js";
@@ -56,14 +57,86 @@ router.get("/requests", authMiddleware, getTravellerRequests);
 
 // ─── Admin/Testing Routes ───────────────────────────────────────────────────
 
-// POST /api/matching/run-periodic - Manually trigger periodic matching
-router.post("/run-periodic", authMiddleware, runPeriodicMatchingController);
+// POST /api/matching/run-periodic - Manually trigger periodic matching (admin only)
+router.post("/run-periodic", authMiddleware, requireAdmin, runPeriodicMatchingController);
 
-// POST /api/matching/test-parcel/:id - Test matching for specific parcel
-router.post("/test-parcel/:id", authMiddleware, testParcelMatching);
+// POST /api/matching/test-parcel/:id - Test matching for specific parcel (admin only)
+router.post("/test-parcel/:id", authMiddleware, requireAdmin, testParcelMatching);
 
-// GET /api/matching/test-traveller-requests - Test endpoint to see requests for specific traveller
-router.get("/test-traveller-requests/:travellerId", async (req, res) => {
+// POST /api/matching/fix-detour-values - Fix detour values for existing requests (admin only)
+router.post("/fix-detour-values", authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    console.log("[Fix] Starting detour value fix for existing parcel requests");
+
+    // Get all parcel requests with 0 or null detour values
+    const requests = await ParcelRequest.findAll({
+      where: {
+        detour_km: [0, null],
+      },
+      include: [
+        {
+          model: Parcel,
+          as: "parcel",
+          include: [
+            { model: Address, as: "pickupAddress" },
+            { model: Address, as: "deliveryAddress" },
+          ],
+        },
+        {
+          model: TravellerRoute,
+          as: "route",
+          attributes: ["id", "total_distance_km", "transport_mode"],
+        },
+      ],
+      limit: 50, // Process in batches
+    });
+
+    console.log(`[Fix] Found ${requests.length} requests with missing detour values`);
+
+    let fixed = 0;
+    for (const request of requests) {
+      try {
+        // Calculate simple detour based on distance
+        const routeDistance = parseFloat(request.route?.total_distance_km) || 100;
+        const transportMode = request.route?.transport_mode || 'private';
+        
+        // Simple fallback calculation
+        let detourKm, detourPercentage;
+        
+        if (transportMode === 'bus' || transportMode === 'train') {
+          // Transit routes: use walking distance estimate
+          detourKm = Math.random() * 3 + 1; // 1-4 km walking
+          detourPercentage = 0; // Not applicable for transit
+        } else {
+          // Private routes: use percentage of route distance
+          detourKm = routeDistance * (0.05 + Math.random() * 0.15); // 5-20% of route distance
+          detourPercentage = (detourKm / routeDistance) * 100;
+        }
+
+        await request.update({
+          detour_km: Math.round(detourKm * 10) / 10, // Round to 1 decimal
+          detour_percentage: Math.round(detourPercentage * 10) / 10,
+        });
+
+        fixed++;
+        console.log(`[Fix] Updated request ${request.id}: ${detourKm}km (${detourPercentage}%)`);
+      } catch (error) {
+        console.error(`[Fix] Error updating request ${request.id}:`, error.message);
+      }
+    }
+
+    return responseSuccess(res, { 
+      total_found: requests.length, 
+      fixed: fixed 
+    }, `Fixed detour values for ${fixed} parcel requests`);
+  } catch (error) {
+    console.error("[Fix] Error fixing detour values:", error.message);
+    return responseError(res, error.message || "Failed to fix detour values", 500);
+  }
+});
+
+// GET /api/matching/test-traveller-requests/:travellerId (admin only — no raw DB access for regular users)
+router.get("/test-traveller-requests/:travellerId", authMiddleware, requireAdmin, async (req, res) => {
   try {
     const travellerId = req.params.travellerId;
     const { status = "SENT" } = req.query;

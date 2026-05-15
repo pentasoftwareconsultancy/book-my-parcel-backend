@@ -1,0 +1,27 @@
+name: 03 Deploy Testing
+
+on:
+  push:
+    branches:
+      - testing
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  deploy:
+    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: testing
+
+      - name: Deploy Testing to Render
+        run: |
+          echo "🚀 Triggering Render deployment for testing..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_TESTING }}"
+          echo "✅ Testing deployment triggered successfully"

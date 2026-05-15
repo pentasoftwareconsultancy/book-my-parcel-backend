@@ -1,4 +1,4 @@
-export async function up(queryInterface, Sequelize) {
+export const up = async (queryInterface, Sequelize) => {
   await queryInterface.addColumn('parcel', 'form_step', {
     type: Sequelize.INTEGER,
     allowNull: false,
@@ -25,9 +25,9 @@ export async function up(queryInterface, Sequelize) {
     SET form_step = 3 
     WHERE id IN (SELECT parcel_id FROM booking)
   `);
-}
+};
 
-export async function down(queryInterface, Sequelize) {
+export const down = async (queryInterface, Sequelize) => {
   await queryInterface.removeColumn('parcel', 'selected_acceptance_id');
   await queryInterface.removeColumn('parcel', 'form_step');
-}
+};

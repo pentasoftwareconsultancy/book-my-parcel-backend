@@ -41,14 +41,20 @@ const Payment = sequelize.define(
 
     razorpay_order_id: {
       type: DataTypes.STRING,
+      // Unique at DB level — prevents duplicate bookings when concurrent
+      // webhook/callback requests race through verifyPaymentService.
+      unique: "uq_payments_razorpay_order_id",
+      allowNull: true,
     },
 
     razorpay_payment_id: {
       type: DataTypes.STRING,
+      allowNull: true,
     },
 
     razorpay_signature: {
       type: DataTypes.STRING,
+      allowNull: true,
     },
 
     status: {
@@ -58,9 +64,25 @@ const Payment = sequelize.define(
       defaultValue: PAYMENT_STATUS.PENDING,
     },
 
+    released_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Set when payment is released to traveller wallet",
+    },
+
   },
   {
     timestamps: true,
+    indexes: [
+      { name: "idx_payments_parcel_id", fields: ["parcel_id"] },
+      { name: "idx_payments_booking_id", fields: ["booking_id"] },
+      { name: "idx_payments_status", fields: ["status"] },
+      { name: "idx_payments_created_at", fields: ["createdAt"] },
+      { name: "idx_payments_parcel_status", fields: ["parcel_id", "status"] },
+      { name: "idx_payments_status_released_at", fields: ["status", "released_at"] },
+      { name: "idx_payments_razorpay_order_id", fields: ["razorpay_order_id"] },
+      { name: "idx_payments_razorpay_payment_id", fields: ["razorpay_payment_id"] },
+    ],
   }
 );
 

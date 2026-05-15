@@ -432,6 +432,215 @@ export async function isPointNearRoute(routeId, longitude, latitude, bufferKm = 
   }
 }
 
+/**
+ * Calculate Haversine distance between two geographic points
+ * Used for walking distance calculations and stop proximity checks
+ * 
+ * @param {number} lat1 - First point latitude
+ * @param {number} lng1 - First point longitude
+ * @param {number} lat2 - Second point latitude
+ * @param {number} lng2 - Second point longitude
+ * @returns {number} Distance in kilometers
+ */
+export function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Check if a point is within walking distance of any stop in a transit route
+ * Used for bus/train routes instead of proximity to route geometry
+ * 
+ * @param {number} lat - Latitude of point (pickup or drop location)
+ * @param {number} lng - Longitude of point
+ * @param {Array} stops - Array of stop objects with `lat` and `lng` properties
+ * @param {number} maxWalkingMeters - Max allowed walking distance (default 2000 = 2 km)
+ * @returns {boolean} True if within walking distance of any stop
+ */
+export function isPointNearStop(lat, lng, stops, maxWalkingMeters = 2000) {
+  try {
+    if (!stops || !Array.isArray(stops) || stops.length === 0) {
+      console.warn('[SpatialMatching] No stops provided for proximity check');
+      return false;
+    }
+
+    const maxWalkingKm = maxWalkingMeters / 1000;
+    const isNear = stops.some(stop => {
+      if (!stop.lat || !stop.lng) {
+        return false;
+      }
+      const distance = haversineDistance(lat, lng, stop.lat, stop.lng);
+      return distance <= maxWalkingKm;
+    });
+
+    console.log(`[SpatialMatching] Point (${lat}, ${lng}) near stop: ${isNear}`);
+    return isNear;
+  } catch (error) {
+    console.error('[SpatialMatching] Error checking point proximity to stops:', error);
+    return false;
+  }
+}
+
+/**
+ * Check if both pickup and drop locations are within walking distance of transit stops
+ * AND verify they are in the correct order (pickup before drop)
+ * Used for validating parcel eligibility for bus/train routes
+ * 
+ * @param {number} pickupLat - Pickup latitude
+ * @param {number} pickupLng - Pickup longitude
+ * @param {number} dropLat - Drop latitude
+ * @param {number} dropLng - Drop longitude
+ * @param {Array} stops - Array of stop objects with `lat` and `lng` properties
+ * @param {number} maxWalkingMeters - Max allowed walking distance (default 2000 = 2 km)
+ * @returns {boolean} True if both locations are near stops in correct order
+ */
+export function isParcelNearTransitRoute(pickupLat, pickupLng, dropLat, dropLng, stops, maxWalkingMeters = 2000) {
+  try {
+    if (!stops || !Array.isArray(stops) || stops.length === 0) {
+      console.warn('[SpatialMatching] No stops provided for transit route check');
+      return false;
+    }
+
+    const maxWalkingKm = maxWalkingMeters / 1000;
+
+    // Find nearest stop to pickup
+    let pickupStopIndex = -1;
+    let pickupMinDist = Infinity;
+    stops.forEach((stop, idx) => {
+      if (stop.lat && stop.lng) {
+        const distance = haversineDistance(pickupLat, pickupLng, stop.lat, stop.lng);
+        if (distance <= maxWalkingKm && distance < pickupMinDist) {
+          pickupMinDist = distance;
+          pickupStopIndex = idx;
+        }
+      }
+    });
+
+    // Find nearest stop to delivery
+    let dropStopIndex = -1;
+    let dropMinDist = Infinity;
+    stops.forEach((stop, idx) => {
+      if (stop.lat && stop.lng) {
+        const distance = haversineDistance(dropLat, dropLng, stop.lat, stop.lng);
+        if (distance <= maxWalkingKm && distance < dropMinDist) {
+          dropMinDist = distance;
+          dropStopIndex = idx;
+        }
+      }
+    });
+
+    // Both must be within walking distance
+    const pickupNear = pickupStopIndex >= 0;
+    const dropNear = dropStopIndex >= 0;
+
+    if (!pickupNear || !dropNear) {
+      console.log(`[SpatialMatching] Parcel not eligible: pickup near=${pickupNear}, drop near=${dropNear}`);
+      return false;
+    }
+
+    // CRITICAL FIX: Verify correct order (pickup comes before drop in route)
+    if (pickupStopIndex > dropStopIndex) {
+      console.warn(`[SpatialMatching] REVERSE DIRECTION DETECTED: Pickup at stop #${pickupStopIndex} (${stops[pickupStopIndex]?.name}), Drop at stop #${dropStopIndex} (${stops[dropStopIndex]?.name})`);
+      console.warn(`[SpatialMatching] Route goes backward - REJECTING parcel`);
+      return false;
+    }
+
+    const isEligible = true;
+    console.log(`[SpatialMatching] ✓ Parcel eligible: Pickup at stop #${pickupStopIndex} (${stops[pickupStopIndex]?.name}), Drop at stop #${dropStopIndex} (${stops[dropStopIndex]?.name})`);
+    return isEligible;
+  } catch (error) {
+    console.error('[SpatialMatching] Error checking parcel eligibility for transit route:', error);
+    return false;
+  }
+}
+
+/**
+ * Calculate walking distance from a point to the nearest stop
+ * Used for computing detour distance for transit routes
+ * 
+ * @param {number} lat - Latitude of point
+ * @param {number} lng - Longitude of point
+ * @param {Array} stops - Array of stop objects with `lat` and `lng` properties
+ * @returns {number} Walking distance to nearest stop in kilometers (or null if no stops)
+ */
+export function calculateWalkingDistanceToNearestStop(lat, lng, stops) {
+  try {
+    if (!stops || !Array.isArray(stops) || stops.length === 0) {
+      console.warn('[SpatialMatching] No stops available for distance calculation');
+      return null;
+    }
+
+    const distances = stops
+      .filter(stop => stop.lat && stop.lng)
+      .map(stop => ({
+        distance: haversineDistance(lat, lng, stop.lat, stop.lng),
+        stop: stop.name || 'Unknown Stop',
+      }));
+
+    if (distances.length === 0) {
+      return null;
+    }
+
+    const nearest = distances.reduce((prev, curr) => 
+      curr.distance < prev.distance ? curr : prev
+    );
+
+    console.log(`[SpatialMatching] Nearest stop to (${lat}, ${lng}): ${nearest.stop} (${nearest.distance.toFixed(2)}km away)`);
+    return parseFloat(nearest.distance.toFixed(2));
+  } catch (error) {
+    console.error('[SpatialMatching] Error calculating walking distance to nearest stop:', error);
+    return null;
+  }
+}
+
+/**
+ * Calculate total walking detour for a parcel on a transit route
+ * Returns the sum of walking distances from pickup to nearest stop + drop to nearest stop
+ * 
+ * @param {number} pickupLat - Pickup latitude
+ * @param {number} pickupLng - Pickup longitude
+ * @param {number} dropLat - Drop latitude
+ * @param {number} dropLng - Drop longitude
+ * @param {Array} stops - Array of stop objects with `lat` and `lng` properties
+ * @returns {Object} Walking detour details {pickupWalkingKm, dropWalkingKm, totalWalkingKm} or null if error
+ */
+export function calculateTransitDetour(pickupLat, pickupLng, dropLat, dropLng, stops) {
+  try {
+    if (!stops || !Array.isArray(stops) || stops.length === 0) {
+      console.warn('[SpatialMatching] No stops available for transit detour calculation');
+      return null;
+    }
+
+    const pickupWalkingKm = calculateWalkingDistanceToNearestStop(pickupLat, pickupLng, stops);
+    const dropWalkingKm = calculateWalkingDistanceToNearestStop(dropLat, dropLng, stops);
+
+    if (pickupWalkingKm === null || dropWalkingKm === null) {
+      return null;
+    }
+
+    const totalWalkingKm = parseFloat((pickupWalkingKm + dropWalkingKm).toFixed(2));
+
+    console.log(`[SpatialMatching] Transit detour: pickup=${pickupWalkingKm}km, drop=${dropWalkingKm}km, total=${totalWalkingKm}km`);
+    return {
+      pickupWalkingKm,
+      dropWalkingKm,
+      totalWalkingKm,
+    };
+  } catch (error) {
+    console.error('[SpatialMatching] Error calculating transit detour:', error);
+    return null;
+  }
+}
+
 export default {
   findRoutesWithinBuffer,
   findRoutesBetweenPoints,
@@ -440,4 +649,9 @@ export default {
   findRoutesByPlaceAndBuffer,
   getRouteGeometryAsGeoJSON,
   isPointNearRoute,
+  haversineDistance,
+  isPointNearStop,
+  isParcelNearTransitRoute,
+  calculateWalkingDistanceToNearestStop,
+  calculateTransitDetour,
 };

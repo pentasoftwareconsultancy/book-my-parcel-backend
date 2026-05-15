@@ -1,4 +1,4 @@
-// CI/CD Test - v1.0 (2026-04-08)
+// CI/CD Test - v2.0 (2026-04-08) - Complete Pipeline Testing
 import dotenv from "dotenv";
 dotenv.config();
 import { createServer } from "http";
@@ -17,7 +17,7 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("✅ Connected to database");
 
-    await sequelize.sync({ force: false, alter: false });
+    await sequelize.sync({ force: true, alter: true });
     console.log("✅ Tables synced");
 
     await seedRoles();

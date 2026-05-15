@@ -18,7 +18,14 @@ const BookingStatusLog = sequelize.define(
       allowNull: false,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    indexes: [
+      { name: "idx_booking_status_logs_booking_id", fields: ["booking_id"] },
+      { name: "idx_booking_status_logs_booking_created", fields: ["booking_id", "createdAt"] },
+      { name: "idx_booking_status_logs_status", fields: ["status"] },
+    ],
+  },
 );
 
 export default BookingStatusLog;

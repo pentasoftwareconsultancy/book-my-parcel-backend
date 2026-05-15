@@ -8,9 +8,15 @@ import UserProfile from '../user/userProfile.model.js';
 import Address from "./address.model.js";
 import Booking from "../booking/booking.model.js";
 import ParcelAcceptance from "../matching/parcelAcceptance.model.js";
+import Feedback from "../feedback/feedback.model.js";
 import app from "../../app.js";
 import { uploadFiles } from "../../utils/fileUpload.util.js";
-import { BOOKING_STATUS, BOOKING_TRANSITIONS } from "../../utils/constants.js";
+import {
+  BOOKING_STATUS,
+  BOOKING_TRANSITIONS,
+  PARCEL_TRANSITIONS,
+  assertValidTransition,
+} from "../../utils/constants.js";
 import { generateParcelId } from "../../utils/idGenerator.js";
 import {
   validateAddress,
@@ -22,6 +28,12 @@ import {
   extractIntermediateCities,
 } from "../../services/googleMaps.service.js";
 import { calculatePrice } from "../../services/priceCalculation.service.js";
+import { calculatePriceWithSurge } from "../../services/priceCalculation.service.js";
+import { getPagination, getPagingData } from "../../utils/pagination.js";
+import { refundPaymentForParcel } from "../payment/payment.service.js";
+import twilioService from "../../services/twilio.service.js";
+import { sendToUser, sendToTraveller } from "../../services/notification.service.js";
+import { auditLog } from "../../utils/auditLog.util.js";
 
 const weightMap = { small: 1, medium: 5, large: 10, extra_large: 20 };
 
@@ -35,7 +47,6 @@ async function enrichAddressWithGoogleData(addressData) {
 
   // If any required field is missing, return as-is
   if (!address || !city || !pincode) {
-    console.warn("[GoogleMaps] Missing required address fields:", { address, city, pincode });
     return enriched;
   }
 
@@ -65,7 +76,7 @@ async function enrichAddressWithGoogleData(addressData) {
           }
         }
       } catch (e) {
-        console.warn("[GoogleMaps] Address validation skipped:", e.message);
+        console.warn("[Parcel] Address validation failed (non-fatal):", e.message);
       }
     }
 
@@ -74,7 +85,6 @@ async function enrichAddressWithGoogleData(addressData) {
     const firstResult = geocodeResult.results?.[0];
 
     if (!firstResult) {
-      console.warn("[GoogleMaps] No geocode result found for:", { address, city, pincode });
       return enriched;
     }
 
@@ -102,7 +112,7 @@ async function enrichAddressWithGoogleData(addressData) {
         if (hierarchy.locality)    enriched.locality    = hierarchy.locality;
         if (hierarchy.subLocality) enriched.sub_localities = [hierarchy.subLocality];
       } catch (e) {
-        console.warn("[GoogleMaps] Place details skipped:", e.message);
+        console.warn("[Parcel] Place details fetch failed (non-fatal):", e.message);
       }
     }
 
@@ -119,12 +129,11 @@ async function enrichAddressWithGoogleData(addressData) {
           }));
         }
       } catch (e) {
-        console.warn("[GoogleMaps] Address descriptors skipped:", e.message);
+        console.warn("[Parcel] Address descriptors fetch failed (non-fatal):", e.message);
       }
     }
   } catch (error) {
-    console.error("[GoogleMaps] Address enrichment failed:", error.message);
-    // Return partially enriched data rather than throwing
+    console.warn("[Parcel] enrichAddressWithGoogleData failed (non-fatal):", error.message);
   }
 
   return enriched;
@@ -241,23 +250,29 @@ export async function createParcelRequest(data, files) {
         intermediateCities = extractIntermediateCities(steps);
         // route_distance_km is the source of truth for short/long classification in Phase 2
         
-        // ── Calculate estimated price based on distance, weight, and dimensions ──
+        // ── Calculate estimated price with surge multiplier ──────────────────
         try {
-          suggestedPrice = calculatePrice(
-            routeDistance, 
+          const priceResult = await calculatePriceWithSurge(
+            routeDistance,
             data.weight || 1,
-            data.length,    // Length in cm
-            data.width,     // Width in cm
-            data.height     // Height in cm
+            data.length,
+            data.width,
+            data.height
           );
-          console.log(`[Price] Calculated suggested price: ₹${suggestedPrice} (distance: ${routeDistance}km, weight: ${data.weight}kg, dimensions: ${data.length}×${data.width}×${data.height}cm)`);
+          suggestedPrice = priceResult.price;
+          // Attach surge info to data so it can be returned to the FE
+          data._surgeMultiplier = priceResult.surgeMultiplier;
+          data._surgeReasons    = priceResult.surgeReasons;
+          data._basePrice       = priceResult.basePrice;
         } catch (priceError) {
-          console.warn(`[Price] Failed to calculate price: ${priceError.message}`);
+          // Fallback to sync calculation
+          try { suggestedPrice = calculatePrice(routeDistance, data.weight || 1, data.length, data.width, data.height); } catch (syncPriceErr) {
+            console.warn("[Parcel] Sync price calculation fallback failed (non-fatal):", syncPriceErr.message);
+          }
         }
       }
     } catch (error) {
-      console.error("[GoogleMaps] Route calculation failed:", error.message);
-      // Continue without route data
+      console.warn("[Parcel] Route computation failed (non-fatal):", error.message);
     }
   }
 
@@ -302,7 +317,15 @@ export async function createParcelRequest(data, files) {
       );
 
       await t.commit();
-      return { parcel, pickupAddress, deliveryAddress, suggestedPrice };
+      return {
+        parcel,
+        pickupAddress,
+        deliveryAddress,
+        suggestedPrice,
+        surgeMultiplier: data._surgeMultiplier || 1,
+        surgeReasons:    data._surgeReasons    || [],
+        basePrice:       data._basePrice       || suggestedPrice,
+      };
     } catch (error) {
       await t.rollback();
       
@@ -310,7 +333,6 @@ export async function createParcelRequest(data, files) {
       if (error.name === 'SequelizeUniqueConstraintError' && 
           error.fields && error.fields.parcel_ref) {
         retryCount++;
-        console.log(`[Parcel] Duplicate parcel_ref ${parcel_ref}, retrying... (${retryCount}/${maxRetries})`);
         
         if (retryCount >= maxRetries) {
           throw new Error('Failed to generate unique parcel reference after multiple attempts');
@@ -327,8 +349,11 @@ export async function createParcelRequest(data, files) {
   }
 }
 
-export async function getUserParcelRequests(userId) {
-  const parcels = await Parcel.findAll({
+export async function getUserParcelRequests(userId, query = {}) {
+  const { page = 1, limit = 20 } = query;
+  const { limit: parsedLimit, offset, page: parsedPage } = getPagination(page, limit);
+
+  const result = await Parcel.findAndCountAll({
     where: { user_id: userId },
     include: [
       { model: Address, as: "pickupAddress" },
@@ -359,8 +384,39 @@ export async function getUserParcelRequests(userId) {
       }
     ],
     order: [["createdAt", "DESC"]],
+    limit: parsedLimit,
+    offset,
+    distinct: true,
+    subQuery: false, // prevents Sequelize from wrapping in subquery which strips includes
   });
-  return parcels;
+
+  // Attach feedback data for DELIVERED parcels
+  const bookingIds = result.rows.map((p) => p.booking?.id).filter(Boolean);
+
+  let feedbackMap = {};
+  if (bookingIds.length > 0) {
+    const feedbacks = await Feedback.findAll({
+      where: { booking_id: bookingIds },
+      attributes: ["booking_id", "rating", "comment"],
+    });
+    feedbacks.forEach((f) => { feedbackMap[f.booking_id] = f; });
+  }
+
+  const parcels = result.rows.map((p) => {
+    const plain = p.toJSON();
+    if (plain.booking?.id) {
+      const fb = feedbackMap[plain.booking.id];
+      plain.has_feedback      = !!fb;
+      plain.existing_feedback = fb ? { rating: fb.rating, comment: fb.comment } : null;
+    } else {
+      plain.has_feedback      = false;
+      plain.existing_feedback = null;
+    }
+    return plain;
+  });
+
+  // returns { total, page, limit, totalPages, data: [...] }
+  return getPagingData({ count: result.count, rows: parcels }, parsedPage, parsedLimit);
 }
 
 export async function getParcelById(parcelId) {
@@ -442,8 +498,6 @@ export async function getParcelById(parcelId) {
 
     return parcel;
   } catch (error) {
-    console.error(`[getParcelById] Error fetching parcel ${parcelId}:`, error.message);
-    console.error(`[getParcelById] Stack:`, error.stack);
     throw error;
   }
 }
@@ -487,7 +541,6 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
     // ✅ NEW: Generate Booking ID when Step 3 is completed (payment)
     let booking = null;
     if (stepData.form_step === 3) {
-      console.log(`[updateParcelStep] Step 3 completed - Creating booking and confirming traveller selection`);
       
       // Update parcel status to CONFIRMED when payment is done
       updateData.status = "CONFIRMED";
@@ -498,7 +551,16 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         transaction: t 
       });
       
-      if (!booking && parcel.selected_partner_id) {
+      // Use selected_partner_id from stepData (MUST be provided) or from parcel as fallback
+      const selectedPartnerId = stepData.selected_partner_id || parcel.selected_partner_id;
+
+      if (!selectedPartnerId) {
+        // Warning: No traveller ID provided for booking creation
+      }
+      // All bookings use PAY_NOW mode
+      const paymentMode = 'PAY_NOW';
+      
+      if (!booking && selectedPartnerId) {
         // Generate Booking ID
         const { generateBookingId } = await import("../../utils/idGenerator.js");
         const bookingRef = await generateBookingId();
@@ -506,19 +568,18 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         // Create booking with Booking ID (but NO tracking ID yet)
         booking = await Booking.create({
           parcel_id: parcelId,
-          traveller_id: parcel.selected_partner_id,
+          traveller_id: selectedPartnerId,
           status: "CONFIRMED",
           booking_ref: bookingRef,
           tracking_ref: null, // Will be generated when IN_TRANSIT
+          payment_mode: paymentMode, // Track whether it's pay now or pay after delivery
         }, { transaction: t });
         
-        console.log(`[updateParcelStep] Booking created with ID: ${bookingRef}`);
       } else if (booking && !booking.booking_ref) {
         // Update existing booking with Booking ID
         const { generateBookingId } = await import("../../utils/idGenerator.js");
         const bookingRef = await generateBookingId();
         await booking.update({ booking_ref: bookingRef }, { transaction: t });
-        console.log(`[updateParcelStep] Booking updated with ID: ${bookingRef}`);
       }
     }
 
@@ -526,17 +587,36 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
     await t.commit();
     
     // ✅ NEW: Emit WebSocket events when Step 3 is completed (booking confirmed)
-    if (stepData.form_step === 3 && booking && parcel.selected_partner_id && req?.app?.get("io")) {
+    const selectedPartnerId = stepData.selected_partner_id || parcel.selected_partner_id;
+    if (stepData.form_step === 3 && booking && selectedPartnerId && req?.app?.get("io")) {
       const io = req.app.get("io");
       
-      console.log('🔌 Emitting WebSocket events for booking confirmation (Step 3):', {
-        parcelId,
-        bookingId: booking.id,
-        bookingRef: booking.booking_ref,
-        travellerId: parcel.selected_partner_id
-      });
-      
+      // Fetch traveller details to include in the socket payload
+      let travellerDetails = null;
+      if (selectedPartnerId) {
+        const travellerUser = await User.findByPk(selectedPartnerId, {
+          attributes: ["id", "phone_number"],
+          include: [
+            { model: UserProfile, as: "profile", attributes: ["name"] },
+            { model: TravellerProfile, as: "travellerProfile", attributes: ["rating", "vehicle_type", "vehicle_number", "total_deliveries"] },
+          ],
+        });
+        if (travellerUser) {
+          travellerDetails = {
+            id: travellerUser.id,
+            name: travellerUser.profile?.name || "Your Traveller",
+            phone: travellerUser.phone_number || "",
+            rating: travellerUser.travellerProfile?.rating || null,
+            vehicle: travellerUser.travellerProfile?.vehicle_type || "",
+            vehicleNumber: travellerUser.travellerProfile?.vehicle_number || "",
+            totalDeliveries: travellerUser.travellerProfile?.total_deliveries || 0,
+          };
+        }
+      }
+
       // Emit booking confirmation to selected traveller
+      const confirmationMessage = "Booking confirmed! Payment received. Proceed to pickup.";
+
       const bookingConfirmedData = {
         booking_id: booking.id,
         booking_ref: booking.booking_ref,
@@ -545,7 +625,9 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         parcel_ref: parcel.parcel_ref,
         final_price: parcel.price_quote,
         status: "CONFIRMED",
-        message: "Booking confirmed! Payment received.",
+        payment_mode: booking.payment_mode,
+        message: confirmationMessage,
+        traveller: travellerDetails,
         parcel_details: {
           pickup_address: parcel.pickupAddress,
           delivery_address: parcel.deliveryAddress,
@@ -558,8 +640,7 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         }
       };
       
-      io.to(`traveller_requests_${parcel.selected_partner_id}`).emit("booking_confirmed", bookingConfirmedData);
-      console.log(`🔌 Emitted booking_confirmed to room traveller_requests_${parcel.selected_partner_id}`, bookingConfirmedData);
+      io.to(`traveller_requests_${selectedPartnerId}`).emit("booking_confirmed", bookingConfirmedData);
       
       // Emit to parcel room (for parcel owner)
       io.to(`parcel_${parcelId}`).emit("parcel_booking_confirmed", {
@@ -569,7 +650,6 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
         traveller_id: parcel.selected_partner_id,
         status: "CONFIRMED",
       });
-      console.log(`🔌 Emitted parcel_booking_confirmed to room parcel_${parcelId}`);
       
       // Send push notification to traveller
       const { sendToTraveller } = await import("../../services/notification.service.js");
@@ -586,12 +666,9 @@ export async function updateParcelStep(parcelId, stepData, req = null) {
       );
     }
     
-    console.log(`[updateParcelStep] Updated parcel ${parcelId} to step ${stepData.form_step}`);
-    
     return parcel;
   } catch (error) {
     await t.rollback();
-    console.error(`[updateParcelStep] Error updating parcel ${parcelId}:`, error.message);
     throw error;
   }
 }
@@ -605,6 +682,8 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
       include: [
         { model: User, as: "user" },
         { model: Booking, as: "booking" },
+        { model: Address, as: "pickupAddress",   foreignKey: "pickup_address_id" },
+        { model: Address, as: "deliveryAddress", foreignKey: "delivery_address_id" },
       ],
     });
     
@@ -616,30 +695,29 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
       throw new Error("Unauthorized: You don't own this parcel");
     }
 
-    // Check if parcel can be cancelled
-    const cancellableStatuses = ["CREATED", "MATCHING", "PARTNER_SELECTED", "CONFIRMED"];
-    if (!cancellableStatuses.includes(parcel.status)) {
-      throw new Error(`Cannot cancel parcel with status: ${parcel.status}. Can only cancel CREATED, MATCHING, PARTNER_SELECTED, or CONFIRMED status.`);
-    }
+    // Validate the CANCELLED transition is allowed from current parcel status
+    assertValidTransition(parcel.status, "CANCELLED", PARCEL_TRANSITIONS, "Parcel");
 
     // Update parcel status to CANCELLED
     await parcel.update({ status: "CANCELLED" });
 
-    // If there's a booking with this parcel, cancel it too
+    // If there's a booking with this parcel, cancel it too (guard booking transition)
     const booking = parcel.booking;
     if (booking && !["DELIVERED", "CANCELLED"].includes(booking.status)) {
+      assertValidTransition(booking.status, "CANCELLED", BOOKING_TRANSITIONS, "Booking");
       await booking.update({ status: "CANCELLED" });
     }
 
-    // Log cancellation
-    console.log(`📋 [Cancellation] Parcel cancelled:`, {
-      parcel_id: parcelId,
-      parcel_ref: parcel.parcel_ref,
-      user_id: userId,
-      previous_status: parcel.status,
-      new_status: "CANCELLED",
-      reason,
-      details,
+    // Attempt Razorpay refund if payment was made (non-fatal — cancellation proceeds regardless)
+    const refundResult = await refundPaymentForParcel(parcelId, `Cancelled by user: ${reason}`);
+
+    auditLog({
+      action:       "PARCEL_CANCELLED",
+      actorId:      userId,
+      actorRole:    "user",
+      resourceType: "parcel",
+      resourceId:   parcelId,
+      meta:         { parcel_ref: parcel.parcel_ref, reason },
     });
 
     // Emit WebSocket event to both user and traveller
@@ -660,14 +738,47 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
       // Emit to user's room so they see the parcel removed
       const userRoom = `user_${userId}`;
       io.to(userRoom).emit("parcel_cancelled", cancelData);
-      console.log(`[WebSocket] Emitted parcel_cancelled to user ${userRoom}`);
 
       // Emit to traveller's room if booking exists
       if (booking) {
         const travellerRoom = `user_${booking.traveller_id}`;
         io.to(travellerRoom).emit("booking_cancelled", cancelData);
-        console.log(`[WebSocket] Emitted booking_cancelled to traveller ${travellerRoom}`);
       }
+    }
+
+    // ── SMS + push notifications (best-effort, non-fatal) ─────────────────
+    try {
+      const fromCity = parcel.pickupAddress?.city  || "pickup";
+      const toCity   = parcel.deliveryAddress?.city || "delivery";
+
+      // Notify sender (in-app)
+      await sendToUser(
+        userId,
+        "Parcel Cancelled",
+        `Your parcel ${parcel.parcel_ref || parcelId} (${fromCity} → ${toCity}) has been cancelled.`,
+        { type: "parcel_cancelled", parcel_id: parcelId }
+      );
+
+      // Notify traveller if a booking existed
+      if (booking?.traveller_id) {
+        await sendToTraveller(
+          booking.traveller_id,
+          "Booking Cancelled",
+          `The sender cancelled parcel ${parcel.parcel_ref || parcelId} (${fromCity} → ${toCity}). Booking ref: ${booking.booking_ref || "N/A"}.`,
+          { type: "booking_cancelled", booking_id: booking.id }
+        );
+
+        // SMS to traveller
+        const travellerUser = await User.findByPk(booking.traveller_id);
+        if (travellerUser?.phone_number) {
+          await twilioService.sendSMS(
+            travellerUser.phone_number,
+            `Book My Parcel: The sender has cancelled booking ${booking.booking_ref || ""}. Parcel: ${fromCity} → ${toCity}. No action needed.`
+          );
+        }
+      }
+    } catch (notifErr) {
+      console.warn("[Parcel] cancelParcelRequest notification failed (non-fatal):", notifErr.message);
     }
 
     return {
@@ -679,7 +790,6 @@ export async function cancelParcelRequest(parcelId, userId, cancellationData = {
       cancelled_at: new Date(),
     };
   } catch (error) {
-    console.error(`[cancelParcelRequest] Error cancelling parcel:`, error.message);
     throw error;
   }
 }

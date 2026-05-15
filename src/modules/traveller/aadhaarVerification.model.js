@@ -20,7 +20,14 @@ const AadhaarVerification = sequelize.define(
     status: DataTypes.STRING, // PENDING / VERIFIED / REJECTED
     verified_by: DataTypes.UUID, // admin user id
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    indexes: [
+      { name: "idx_aadhaar_verifications_traveller_id", fields: ["traveller_id"] },
+      { name: "idx_aadhaar_verifications_status", fields: ["status"] },
+      { name: "idx_aadhaar_verifications_verified_by", fields: ["verified_by"] },
+    ],
+  },
 );
 
 export default AadhaarVerification;

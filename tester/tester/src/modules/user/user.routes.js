@@ -6,6 +6,7 @@ import * as ctrl from "./user.controller.js";
 import { getUserRequests } from "../parcel/parcel.controller.js";
 import { storeFCMTokenEndpoint, removeFCMTokenEndpoint } from "./fcmToken.controller.js";
 import paymentRoutes from "../payment/payment.routes.js";
+import feedback from "../feedback/feedback.routes.js";
 
 const router = express.Router();
 
@@ -28,6 +29,9 @@ router.get(
 router.post("/fcm-token", authMiddleware, storeFCMTokenEndpoint);
 router.delete("/fcm-token", authMiddleware, removeFCMTokenEndpoint);
 router.use("/payment", authMiddleware, paymentRoutes);
+
+// ── Feedback ─────────────────
+router.use("/feedback", feedback);
 
 
 export default router;

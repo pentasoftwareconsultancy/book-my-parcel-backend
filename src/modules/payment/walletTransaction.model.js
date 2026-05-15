@@ -23,7 +23,13 @@ const WalletTransaction = sequelize.define(
     },
     reason: DataTypes.STRING,
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    indexes: [
+      { name: "idx_wallet_transactions_wallet_id", fields: ["wallet_id"] },
+      { name: "idx_wallet_transactions_wallet_created", fields: ["wallet_id", "createdAt"] },
+    ],
+  },
 );
 
 export default WalletTransaction;

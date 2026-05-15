@@ -19,7 +19,13 @@ const ParcelProof = sequelize.define(
     },
     image_url: DataTypes.STRING,
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    indexes: [
+      { name: "idx_parcel_proofs_booking_id", fields: ["booking_id"] },
+      { name: "idx_parcel_proofs_booking_type", fields: ["booking_id", "type"] },
+    ],
+  },
 );
 
 export default ParcelProof;

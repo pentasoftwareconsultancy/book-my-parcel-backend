@@ -1,26 +1,27 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-
-import { generalLimiter } from "../../middlewares/rateLimit.middleware.js";
-
+import { generalLimiter, sensitiveLimiter } from "../../middlewares/rateLimit.middleware.js";
 import {
   submitFeedbackController,
   getBookingFeedbackController,
   getTravellerFeedbackController,
+  updateFeedbackController,
 } from "./feedback.controller.js";
 
 const router = express.Router();
 
-// Apply rate limiting to all feedback routes
 router.use(generalLimiter);
 
-router.post("/submit", authMiddleware, submitFeedbackController);
+// Submit feedback — strict limit (once per booking, but prevent spam)
+router.post("/submit", authMiddleware, sensitiveLimiter, submitFeedbackController);
 
-// Used by frontend to check if feedback already exists for a booking
+// Check if feedback exists for a booking
 router.get("/booking/:bookingId", authMiddleware, getBookingFeedbackController);
 
-// GET /api/feedback/traveller/:travellerId
-// Public — anyone can view a traveller's reviews (no auth required)
+// Update existing feedback
+router.put("/booking/:bookingId", authMiddleware, sensitiveLimiter, updateFeedbackController);
+
+// Public — anyone can view a traveller's reviews
 router.get("/traveller/:travellerId", getTravellerFeedbackController);
 
 export default router;

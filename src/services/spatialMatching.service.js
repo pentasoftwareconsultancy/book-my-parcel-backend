@@ -6,10 +6,23 @@
 
 import sequelize from "../config/database.config.js";
 import TravellerRoute from "../modules/traveller/travellerRoute.model.js";
+import {
+  getCachedRoutesBetweenPoints,
+  cacheRoutesBetweenPoints,
+  getCachedRoutesWithinBuffer,
+  cacheRoutesWithinBuffer
+} from "../redis/cache/spatialQueryCache.service.js";
+import {
+  getCachedRouteGeometry,
+  cacheRouteGeometry,
+  getCachedRouteGeoJSON,
+  cacheRouteGeoJSON
+} from "../redis/cache/routeGeometryCache.service.js";
 
 /**
  * Find routes within buffer distance of a point
  * Uses ST_DWithin for efficient spatial queries
+ * CACHED: Results are cached in Redis for 15 minutes
  * 
  * @param {number} longitude - Pickup longitude
  * @param {number} latitude - Pickup latitude
@@ -21,6 +34,12 @@ export async function findRoutesWithinBuffer(longitude, latitude, bufferKm = 5) 
     if (!longitude || !latitude || !bufferKm) {
       console.warn('[SpatialMatching] Invalid parameters for buffer search');
       return [];
+    }
+
+    // Check cache first
+    const cached = await getCachedRoutesWithinBuffer(latitude, longitude, bufferKm);
+    if (cached) {
+      return cached;
     }
 
     // Convert km to degrees (approximate: 1 degree ≈ 111.32 km)
@@ -64,6 +83,10 @@ export async function findRoutesWithinBuffer(longitude, latitude, bufferKm = 5) 
     );
 
     console.log(`[SpatialMatching] Found ${routes.length} routes within buffer`);
+    
+    // Cache the results
+    await cacheRoutesWithinBuffer(latitude, longitude, bufferKm, routes);
+    
     return routes;
   } catch (error) {
     console.error('[SpatialMatching] Error finding routes within buffer:', error);
@@ -74,6 +97,7 @@ export async function findRoutesWithinBuffer(longitude, latitude, bufferKm = 5) 
 /**
  * Find routes that pass near both pickup and drop points
  * Combines spatial matching for both locations
+ * CACHED: Results are cached in Redis for 15 minutes
  * 
  * @param {number} pickupLon - Pickup longitude
  * @param {number} pickupLat - Pickup latitude
@@ -93,6 +117,12 @@ export async function findRoutesBetweenPoints(
     if (!pickupLon || !pickupLat || !dropLon || !dropLat) {
       console.warn('[SpatialMatching] Invalid coordinates for between-points search');
       return [];
+    }
+
+    // Check cache first
+    const cached = await getCachedRoutesBetweenPoints(pickupLat, pickupLon, dropLat, dropLon, bufferKm);
+    if (cached) {
+      return cached;
     }
 
     const bufferDegrees = bufferKm / 111.32;
@@ -149,6 +179,10 @@ export async function findRoutesBetweenPoints(
     );
 
     console.log(`[SpatialMatching] Found ${routes.length} routes between points`);
+    
+    // Cache the results
+    await cacheRoutesBetweenPoints(pickupLat, pickupLon, dropLat, dropLon, bufferKm, routes);
+    
     return routes;
   } catch (error) {
     console.error('[SpatialMatching] Error finding routes between points:', error);
@@ -335,6 +369,7 @@ export async function findRoutesByPlaceAndBuffer(parcelData, bufferKm = 5) {
 /**
  * Get route geometry as GeoJSON
  * Useful for frontend visualization
+ * CACHED: Results are cached in Redis for 1 hour
  * 
  * @param {string} routeId - Route UUID
  * @returns {Promise<Object>} GeoJSON FeatureCollection
@@ -344,6 +379,12 @@ export async function getRouteGeometryAsGeoJSON(routeId) {
     if (!routeId) {
       console.warn('[SpatialMatching] Invalid route ID for GeoJSON');
       return null;
+    }
+
+    // Check cache first
+    const cached = await getCachedRouteGeoJSON(routeId);
+    if (cached) {
+      return cached;
     }
 
     const result = await sequelize.query(
@@ -376,6 +417,10 @@ export async function getRouteGeometryAsGeoJSON(routeId) {
     };
 
     console.log(`[SpatialMatching] Generated GeoJSON for route ${routeId}`);
+    
+    // Cache the result
+    await cacheRouteGeoJSON(routeId, geoJSON);
+    
     return geoJSON;
   } catch (error) {
     console.error('[SpatialMatching] Error getting route geometry as GeoJSON:', error);

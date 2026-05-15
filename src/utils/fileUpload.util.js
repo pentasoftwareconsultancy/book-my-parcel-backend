@@ -1,6 +1,14 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { randomUUID } from "crypto";
+
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+
+function safeImageFilename(file) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  return `${Date.now()}-${randomUUID()}${ext}`;
+}
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -10,7 +18,7 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    cb(null, safeImageFilename(file));
   },
 });
 
@@ -22,7 +30,7 @@ const profileStorage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    cb(null, safeImageFilename(file));
   },
 });
 
@@ -32,8 +40,17 @@ const fileFilter = (req, file, cb) => {
   else cb(new Error("Only image files are allowed!"), false);
 };
 
-export const upload = multer({ storage, fileFilter });
-export const uploadProfile = multer({ storage: profileStorage, fileFilter });
+export const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: MAX_IMAGE_SIZE_BYTES, files: 10 },
+});
+
+export const uploadProfile = multer({
+  storage: profileStorage,
+  fileFilter,
+  limits: { fileSize: MAX_IMAGE_SIZE_BYTES, files: 1 },
+});
 
 // Helper to return array of uploaded file paths
 export async function uploadFiles(files) {

@@ -1,4 +1,4 @@
-export async function up(queryInterface, Sequelize) {
+export const up = async (queryInterface, Sequelize) => {
   await queryInterface.addColumn('booking', 'pickup_otp_generated_at', {
     type: Sequelize.DATE,
     allowNull: true,
@@ -42,9 +42,9 @@ export async function up(queryInterface, Sequelize) {
   });
 
   console.log('✅ Added OTP tracking fields to booking table');
-}
+};
 
-export async function down(queryInterface) {
+export const down = async (queryInterface) => {
   await queryInterface.removeColumn('booking', 'pickup_otp_generated_at');
   await queryInterface.removeColumn('booking', 'pickup_otp_attempts');
   await queryInterface.removeColumn('booking', 'pickup_verified_at');
@@ -55,4 +55,4 @@ export async function down(queryInterface) {
   await queryInterface.removeColumn('booking', 'delivery_otp_locked_until');
 
   console.log('✅ Removed OTP tracking fields from booking table');
-}
+};

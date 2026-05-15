@@ -1,8 +1,7 @@
 import { createParcelRequest } from "./parcel.service.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
 import { getUserParcelRequests, getParcelById as getServiceParcelById } from "./parcel.service.js";
-import { matchParcelWithTravellers } from "../../services/matchingEngine.service.js";
-import { sendToTraveller } from "../../services/notification.service.js";
+import { enqueueAsyncTask } from "../../jobs/asyncTasks.queue.js";
 
 export const createParcel = async (req, res) => {
   try {
@@ -11,29 +10,11 @@ export const createParcel = async (req, res) => {
 
     const result = await createParcelRequest(parcelData, req.files);
 
-    // Trigger matching asynchronously (don't wait for it)
-    setImmediate(async () => {
-      try {
-        const matchResult = await matchParcelWithTravellers(result.parcel.id);
-        console.log(`[Parcel] Matching triggered for parcel ${result.parcel.id}: ${matchResult.requestsSent} requests sent`);
-
-        // Send notifications to travellers
-        if (matchResult.requests && matchResult.requests.length > 0) {
-          for (const request of matchResult.requests) {
-            await sendToTraveller(
-              request.traveller_id,
-              "New Parcel Available",
-              `A new parcel is available for delivery from ${result.pickupAddress.city} to ${result.deliveryAddress.city}`,
-              {
-                parcel_id: result.parcel.id,
-                type: "new_parcel_request",
-              }
-            );
-          }
-        }
-      } catch (error) {
-        console.error(`[Parcel] Error triggering matching for parcel ${result.parcel.id}:`, error.message);
-      }
+    // Trigger matching asynchronously (don't block API response path)
+    await enqueueAsyncTask("match_parcel_with_travellers", {
+      parcelId: result.parcel.id,
+      pickupCity: result.pickupAddress.city,
+      deliveryCity: result.deliveryAddress.city,
     });
 
     // Return the parcel ID and booking ID to frontend
@@ -41,6 +22,9 @@ export const createParcel = async (req, res) => {
       id: result.parcel.id,
       parcel: result.parcel,
       suggestedPrice: result.suggestedPrice,
+      surgeMultiplier: result.surgeMultiplier,
+      surgeReasons: result.surgeReasons,
+      basePrice: result.basePrice,
       pickupAddress: result.pickupAddress,
       deliveryAddress: result.deliveryAddress
     }, "Parcel request created successfully");
@@ -56,15 +40,11 @@ export const createParcel = async (req, res) => {
 export const getUserRequests = async (req, res) => {
   try {
     const userId = req.user.id;
-    console.log("🔥 Fetching orders for userId:", userId); // ← ADD THIS
-    
-    const result = await getUserParcelRequests(userId);
+    console.log("🔥 Fetching orders for userId:", userId);
 
-    return responseSuccess(
-      res,
-      result,
-      "Parcel requests fetched successfully"
-    );
+    const result = await getUserParcelRequests(userId, req.query);
+
+    return responseSuccess(res, result, "Parcel requests fetched successfully");
   } catch (error) {
     console.error("Get parcel error:", error);
     return responseError(res, error.message || "Failed to fetch parcels");
@@ -75,20 +55,23 @@ export const getUserRequests = async (req, res) => {
 export const getParcelById = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log("Fetching parcel with ID:", id);
+    const userId = req.user.id;
+
     const result = await getServiceParcelById(id);
-    console.log("Parcel fetched:", result);
 
     if (!result) {
       return responseError(res, "Parcel not found", 404);
     }
-    console.log("Parcel details:", result);
 
-    return responseSuccess(
-      res,
-      result,
-      "Parcel fetched successfully"
-    );
+    // Ownership check: only the parcel owner OR the assigned traveller can view it
+    const isOwner    = result.user_id === userId;
+    const isTraveller = result.booking?.traveller_id === userId;
+
+    if (!isOwner && !isTraveller) {
+      return responseError(res, "Unauthorized", 403);
+    }
+
+    return responseSuccess(res, result, "Parcel fetched successfully");
   } catch (error) {
     console.error("Get parcel error:", error);
     return responseError(res, error.message || "Failed to fetch parcel");

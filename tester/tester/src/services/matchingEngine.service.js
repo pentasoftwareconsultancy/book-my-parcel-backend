@@ -2,7 +2,13 @@ import sequelize from "../config/database.config.js";
 import { Op } from "sequelize";
 import { Parcel, Address, TravellerRoute, TravellerProfile, ParcelRequest } from "../modules/associations.js";
 import { computeRoute } from "./googleMaps.service.js";
-import { findRoutesBetweenPoints, findRoutesWithinBuffer } from "./spatialMatching.service.js";
+import { 
+  findRoutesBetweenPoints, 
+  findRoutesWithinBuffer,
+  isParcelNearTransitRoute,
+  calculateTransitDetour,
+  haversineDistance as calculateDistance
+} from "./spatialMatching.service.js";
 
 const MAX_CANDIDATES = 20;
 const MAX_DETOUR_PERCENTAGE = 20;
@@ -168,22 +174,109 @@ function applyTemporalFilters(routes, parcelData) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dayOfWeek = now.getDay();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`; // HH:MM format
 
   return routes.filter((route) => {
     if (!route.is_recurring) {
-      // One-time route: departure_date must be >= today
+      // One-time route: departure_date must be >= today AND time must be in future
       const departureDate = new Date(route.departure_date);
-      return departureDate >= today;
+      
+      // If departure is in the past (before today), reject
+      if (departureDate < today) {
+        console.log(`[Matching] One-time route ${route.id}: departure date ${route.departure_date} is in the past`);
+        return false;
+      }
+      
+      // If departure is today, check if time has already passed
+      if (departureDate.getTime() === today.getTime() && route.departure_time) {
+        // Compare times (HH:MM format)
+        if (route.departure_time <= currentTime) {
+          console.log(`[Matching] One-time route ${route.id}: departure time ${route.departure_time} has already passed`);
+          return false;
+        }
+      }
+      
+      return true;
     } else {
-      // Recurring route: check date range and day of week
+      // Recurring route: check date range and day of week AND time hasn't passed
       const startDate = new Date(route.recurring_start_date);
       const endDate = route.recurring_end_date ? new Date(route.recurring_end_date) : null;
 
       const inDateRange = today >= startDate && (!endDate || today <= endDate);
       const dayMatches = route.recurring_days && route.recurring_days.includes(dayOfWeek);
 
-      return inDateRange && dayMatches;
+      // If today matches but time has passed, move to next week's occurrence
+      let timeMatches = true;
+      if (dayMatches && today.getTime() === new Date().getTime() && route.departure_time) {
+        if (route.departure_time <= currentTime) {
+          // Today's departure has passed, but since it's recurring, next week's will be available
+          timeMatches = true; // Still return true because next week occurrence is valid
+          console.log(`[Matching] Recurring route ${route.id}: Today's ${route.departure_time} passed, but next week's available`);
+        }
+      }
+
+      return inDateRange && dayMatches && timeMatches;
     }
+  });
+}
+
+// ─── Step 3.5: Apply Transport Mode Filters ────────────────────────────────
+/**
+ * Filter routes based on transport_mode and proximity requirements
+ * - Private routes: continue with existing logic
+ * - Public transport (bus/train): check if parcel is near transit stops
+ * @param {Array} routes - Routes to filter
+ * @param {Object} parcelData - Parcel location data
+ * @returns {Array} Filtered routes
+ */
+function applyTransportModeFilters(routes, parcelData) {
+  console.log(`[Matching] Applying transport mode filters to ${routes.length} routes`);
+
+  return routes.filter((route) => {
+    // Default to private for routes without transport_mode (backward compatibility)
+    const transportMode = route.transport_mode || 'private';
+
+    if (transportMode === 'private') {
+      // Private routes continue with existing matching logic
+      console.log(`[Matching] Route ${route.id} is private vehicle - will use standard proximity matching`);
+      return true;
+    }
+
+    // PUBLIC TRANSPORT ROUTES (bus, train)
+    if (transportMode === 'bus' || transportMode === 'train') {
+      // If route has explicit stops data (from transit API), use transit-specific matching
+      if (route.stops_passed && Array.isArray(route.stops_passed) && route.stops_passed.length > 0) {
+        // Check if both pickup and drop are near transit stops (2km walking distance)
+        const isEligible = isParcelNearTransitRoute(
+          parcelData.pickup.lat,
+          parcelData.pickup.lng,
+          parcelData.delivery.lat,
+          parcelData.delivery.lng,
+          route.stops_passed,
+          2000 // 2 km walking distance
+        );
+
+        if (isEligible) {
+          console.log(`[Matching] Route ${route.id} (${transportMode}): Parcel is within walking distance of stops ✓`);
+          return true;
+        } else {
+          // Transit-specific matching failed - FALLBACK to private route approach
+          console.log(`[Matching] Route ${route.id} (${transportMode}): Parcel NOT within stops distance, FALLING BACK to private route matching (geographic proximity)`);
+          // Continue to spatial/polyline matching in next step (return true = pass this filter)
+          return true;
+        }
+      } else {
+        // No explicit stops data: Use route geometry/polyline matching
+        // This handles user-created bus/train routes that don't have transit stop API data
+        // Note: Direction verification is only possible with explicit stops (transit API data)
+        console.log(`[Matching] Route ${route.id} (${transportMode}): No explicit stops data, using route geometry matching (direction cannot be verified)`);
+        return true; // Will be matched using standard polyline proximity in next step
+      }
+    }
+
+    // Unknown transport mode - skip
+    console.warn(`[Matching] Route ${route.id} has unknown transport_mode: ${transportMode}`);
+    return false;
   });
 }
 
@@ -224,54 +317,41 @@ function applyCapacityAndPreferenceFilters(routes, parcelData) {
   });
 }
 
-// ─── Step 5: Estimate Detour Using Geometry ────────────────────────────────
-async function estimateDetour(route, parcelData) {
-  try {
-    // Simple approximation: use Haversine distance
-    const pickupToOrigin = haversineDistance(
-      parcelData.pickup.lat,
-      parcelData.pickup.lng,
-      Number(route.originAddress?.latitude || route['originAddress.latitude']),
-      Number(route.originAddress?.longitude || route['originAddress.longitude'])
-    );
-
-    const deliveryToDestination = haversineDistance(
-      parcelData.delivery.lat,
-      parcelData.delivery.lng,
-      Number(route.destAddress?.latitude || route['destAddress.latitude']),
-      Number(route.destAddress?.longitude || route['destAddress.longitude'])
-    );
-
-    const estimatedDetour = pickupToOrigin + deliveryToDestination;
-    return estimatedDetour;
-  } catch (error) {
-    console.error("[Matching] Error estimating detour:", error.message);
-    return Infinity;
-  }
-}
-
-// ─── Helper: Haversine Distance ─────────────────────────────────────────────
-function haversineDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
 // ─── Step 6: Sort and Select Top Candidates ────────────────────────────────
 async function selectTopCandidates(routes, parcelData) {
   const routesWithEstimates = await Promise.all(
-    routes.map(async (route) => ({
-      ...route.toJSON(), // Convert Sequelize instance to plain object
-      estimatedDetour: await estimateDetour(route, parcelData),
-    }))
+    routes.map(async (route) => {
+      const transportMode = route.transport_mode || 'private';
+      let estimatedDetour;
+
+      if (transportMode === 'private') {
+        // Private route: use Haversine distance to route origin/destination
+        estimatedDetour = calculateDetourForPrivateRoute(route, parcelData);
+      } else if (transportMode === 'bus' || transportMode === 'train') {
+        // Transit route: If stops data available, use walking distance to stops
+        if (route.stops_passed && Array.isArray(route.stops_passed) && route.stops_passed.length > 0) {
+          const transitDetour = calculateTransitDetour(
+            parcelData.pickup.lat,
+            parcelData.pickup.lng,
+            parcelData.delivery.lat,
+            parcelData.delivery.lng,
+            route.stops_passed
+          );
+          estimatedDetour = transitDetour ? transitDetour.totalWalkingKm : Infinity;
+        } else {
+          // No explicit stops: Treat as private route (user-created bus/train routes)
+          estimatedDetour = calculateDetourForPrivateRoute(route, parcelData);
+        }
+      } else {
+        estimatedDetour = Infinity;
+      }
+
+      return {
+        ...route.toJSON(),
+        estimatedDetour,
+        transportMode,
+      };
+    })
   );
 
   return routesWithEstimates
@@ -279,9 +359,72 @@ async function selectTopCandidates(routes, parcelData) {
     .slice(0, MAX_CANDIDATES);
 }
 
-// ─── Step 7: Calculate Exact Detour Using Routes API ───────────────────────
+/**
+ * Calculate estimated detour for a private vehicle route
+ * @param {Object} route - Route object
+ * @param {Object} parcelData - Parcel location data
+ * @returns {number} Estimated detour in km
+ */
+function calculateDetourForPrivateRoute(route, parcelData) {
+  try {
+    // Simple approximation: use Haversine distance
+    const pickupToOrigin = calculateDistance(
+      parcelData.pickup.lat,
+      parcelData.pickup.lng,
+      Number(route.originAddress?.latitude || route['originAddress.latitude']),
+      Number(route.originAddress?.longitude || route['originAddress.longitude'])
+    );
+
+    const deliveryToDestination = calculateDistance(
+      parcelData.delivery.lat,
+      parcelData.delivery.lng,
+      Number(route.destAddress?.latitude || route['destAddress.latitude']),
+      Number(route.destAddress?.longitude || route['destAddress.longitude'])
+    );
+
+    return pickupToOrigin + deliveryToDestination;
+  } catch (error) {
+    console.error("[Matching] Error calculating detour for private route:", error.message);
+    return Infinity;
+  }
+}
+
+// ─── Step 7: Calculate Exact Detour Using Routes API (Private) or Walking Distance (Transit) ──
 async function calculateExactDetour(route, parcelData) {
   try {
+    const transportMode = route.transportMode || route.transport_mode || 'private';
+
+    // TRANSIT ROUTES: Use walking distance to stops (if available)
+    if (transportMode === 'bus' || transportMode === 'train') {
+      if (route.stops_passed && Array.isArray(route.stops_passed) && route.stops_passed.length > 0) {
+        const transitDetour = calculateTransitDetour(
+          parcelData.pickup.lat,
+          parcelData.pickup.lng,
+          parcelData.delivery.lat,
+          parcelData.delivery.lng,
+          route.stops_passed
+        );
+
+        if (transitDetour) {
+          console.log(`[Matching] Transit detour for route ${route.id} (${transportMode}): ${transitDetour.totalWalkingKm}km`);
+          return {
+            detourKm: transitDetour.totalWalkingKm,
+            detourPercentage: 0, // Walking distance doesn't have a percentage (not comparable to route distance)
+            isTransitWalkingDistance: true,
+          };
+        } else {
+          // If we can't calculate walking distance, fallback to estimated detour
+          return {
+            detourKm: route.estimatedDetour || Infinity,
+            detourPercentage: 0,
+            isTransitWalkingDistance: false,
+          };
+        }
+      }
+      // Bus/train without explicit stops: treat as private route
+    }
+
+    // PRIVATE ROUTES or BUS/TRAIN routes without stops: Use Google Routes API or fallback
     if (!process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY === "your_google_api_key_here") {
       return null;
     }
@@ -394,6 +537,15 @@ export async function matchParcelWithTravellers(parcelId) {
       return { success: true, requestsSent: 0, message: "No available routes at this time" };
     }
 
+    // Step 3.5: Apply transport mode filters (proximity to stops for transit routes)
+    routes = applyTransportModeFilters(routes, parcelData);
+    console.log(`[Matching] After transport mode filters: ${routes.length} routes`);
+
+    if (routes.length === 0) {
+      console.log(`[Matching] No routes match transport mode requirements for parcel ${parcelId}`);
+      return { success: true, requestsSent: 0, message: "No routes match parcel location and transport requirements" };
+    }
+
     // Step 4: Apply capacity & preference filters
     routes = applyCapacityAndPreferenceFilters(routes, parcelData);
     console.log(`[Matching] After capacity/preference filters: ${routes.length} routes`);
@@ -409,21 +561,14 @@ export async function matchParcelWithTravellers(parcelId) {
 
     // Step 7: Calculate exact detour for top candidates
     const finalCandidates = [];
+    const MAX_TRANSIT_WALKING_KM = 4; // 4 km walking distance for transit routes (2km each direction)
+
     for (const candidate of topCandidates) {
       const detourInfo = await calculateExactDetour(candidate, parcelData);
+      const transportMode = candidate.transportMode || candidate.transport_mode || 'private';
 
-      if (detourInfo && detourInfo.detourKm !== null && detourInfo.detourPercentage !== null) {
-        if (detourInfo.detourPercentage <= MAX_DETOUR_PERCENTAGE && detourInfo.detourKm <= MAX_DETOUR_KM) {
-          finalCandidates.push({
-            ...candidate,
-            detourKm: detourInfo.detourKm,
-            detourPercentage: detourInfo.detourPercentage,
-            matchScore: 100 - detourInfo.detourPercentage,
-          });
-        }
-      } else {
-        // If exact detour calculation fails, use estimated detour with more lenient threshold
-        // Use 100 km threshold for estimated detour (more lenient than exact)
+      if (!detourInfo) {
+        // If exact detour calculation fails, use estimated detour
         if (candidate.estimatedDetour <= 100) {
           const detourPercentage = (candidate.estimatedDetour / candidate.total_distance_km) * 100;
           finalCandidates.push({
@@ -432,6 +577,47 @@ export async function matchParcelWithTravellers(parcelId) {
             detourPercentage: detourPercentage,
             matchScore: Math.max(0, 100 - detourPercentage),
           });
+        }
+        continue;
+      }
+
+      // Handle transit vs private routes differently
+      if (detourInfo.isTransitWalkingDistance) {
+        // TRANSIT ROUTES: Check walking distance threshold
+        if (detourInfo.detourKm <= MAX_TRANSIT_WALKING_KM) {
+          finalCandidates.push({
+            ...candidate,
+            detourKm: detourInfo.detourKm,
+            detourPercentage: 0, // Not applicable for transit
+            matchScore: Math.max(50, 100 - (detourInfo.detourKm / MAX_TRANSIT_WALKING_KM) * 50), // Score based on walking distance
+          });
+        } else {
+          console.log(`[Matching] Candidate ${candidate.id} (${transportMode}) rejected: walking distance ${detourInfo.detourKm}km exceeds threshold ${MAX_TRANSIT_WALKING_KM}km`);
+        }
+      } else {
+        // PRIVATE ROUTES: Check percentage and absolute threshold
+        if (detourInfo.detourPercentage !== undefined || detourInfo.detourPercentage !== null) {
+          if (detourInfo.detourPercentage <= MAX_DETOUR_PERCENTAGE && detourInfo.detourKm <= MAX_DETOUR_KM) {
+            finalCandidates.push({
+              ...candidate,
+              detourKm: detourInfo.detourKm,
+              detourPercentage: detourInfo.detourPercentage,
+              matchScore: 100 - detourInfo.detourPercentage,
+            });
+          } else {
+            console.log(`[Matching] Candidate ${candidate.id} rejected: detour ${detourInfo.detourPercentage.toFixed(1)}% / ${detourInfo.detourKm}km exceeds thresholds`);
+          }
+        } else {
+          // Fallback: use estimated detour
+          if (candidate.estimatedDetour <= 100) {
+            const detourPercentage = (candidate.estimatedDetour / candidate.total_distance_km) * 100;
+            finalCandidates.push({
+              ...candidate,
+              detourKm: candidate.estimatedDetour,
+              detourPercentage: detourPercentage,
+              matchScore: Math.max(0, 100 - detourPercentage),
+            });
+          }
         }
       }
     }

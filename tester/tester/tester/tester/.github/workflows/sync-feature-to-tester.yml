@@ -1,0 +1,45 @@
+name: 02 Sync Feature to Tester
+
+on:
+  push:
+    branches:
+      - feature/bmp
+
+jobs:
+  sync:
+    if: github.repository == 'Priti6542/BMP-Backend'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "CI Sync Bot"
+          git config --global user.email "ci@example.com"
+
+      - name: Clone tester repo
+        run: |
+          git clone https://${{ secrets.TESTER_REPO_TOKEN }}@github.com/pentasoftwareconsultancy/book-my-parcel-backend.git tester
+
+      - name: Sync files
+        run: |
+          rsync -av \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='dist' \
+            --exclude='build' \
+            ./ tester/
+
+      - name: Auto sync to testing
+        run: |
+          cd tester
+
+          git checkout -B testing
+
+          git add .
+
+          git commit -m "Auto sync from dev feature/bmp" || echo "No changes"
+
+          git push -f origin testing

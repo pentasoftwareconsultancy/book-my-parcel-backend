@@ -32,13 +32,6 @@ router.patch(
   updateParcelStep
 );
 
-// Get all parcels of logged-in user
-// router.get(
-//   "/dashboard/orders",
-//   authMiddleware,
-//   getUserRequests
-// );
-
 // Route: Get single parcel by ID
 router.get(
   "/:id",

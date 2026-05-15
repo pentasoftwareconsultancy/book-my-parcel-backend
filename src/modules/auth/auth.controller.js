@@ -1,4 +1,4 @@
-import { signup, login } from "./auth.service.js";
+import { signup, login, logout } from "./auth.service.js";
 import { responseError, responseSuccess } from "../../utils/response.util.js";
 import * as authService from "./auth.service.js";
 /**
@@ -45,14 +45,9 @@ export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const result = await authService.updateProfile(userId, req.body);
-    res.json(result);
+    return responseSuccess(res, result, "Profile updated successfully");
   } catch (error) {
-
-    // 🔥 MUST send proper JSON response
-    return res.status(400).json({
-      message: error.message
-    });
-
+    return responseError(res, error.message, 400);
   }
 };
 
@@ -63,9 +58,9 @@ GET USER PROFILE
 export const getProfileController= async (req, res) => {
   try {
     const data = await authService.getUserProfile(req.user.id);
-    return res.json(data);
+    return responseSuccess(res, data, "Profile fetched successfully");
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return responseError(res, error.message, 500);
   }
 };
 
@@ -79,14 +74,35 @@ export async function uploadProfilePhotoController(req, res) {
 
     const result = await authService.uploadProfilePhoto(userId, file);
     
-    res.status(200).json({
-      success: true,
-      message: "Profile photo uploaded successfully",
-      data: result
-    });
+    return responseSuccess(res, result, "Profile photo uploaded successfully");
   } catch (err) {
     console.error("Upload profile photo error:", err.message);
-    res.status(400).json({ error: err.message });
+    return responseError(res, err.message, 400);
+  }
+}
+
+/**
+ * FORGOT PASSWORD — single endpoint
+ * Step 1: { email }                        → sends OTP
+ * Step 2: { email, otp, newPassword }      → verifies OTP and resets password
+ */
+export async function forgotPasswordController(req, res) {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email) return responseError(res, "Email is required", 400);
+
+    // Step 2 — all three fields present
+    if (otp && newPassword) {
+      const result = await authService.resetPasswordWithOtp(email, otp, newPassword);
+      return responseSuccess(res, {}, result.message);
+    }
+
+    // Step 1 — only email
+    const result = await authService.requestPasswordResetOtp(email);
+    return responseSuccess(res, result, result.message);
+  } catch (err) {
+    console.error("[ForgotPassword] Error:", err.message);
+    return responseError(res, err.message, 400);
   }
 }
 
@@ -99,19 +115,36 @@ export async function updatePasswordController(req, res) {
     const { oldPassword, newPassword } = req.body;
 
     if (!oldPassword || !newPassword) {
-      return res.status(400).json({ 
-        error: "Old password and new password are required" 
-      });
+      return responseError(res, "Old password and new password are required", 400);
     }
 
     const result = await authService.updatePassword(userId, oldPassword, newPassword);
     
-    res.status(200).json({
-      success: true,
-      message: result.message
-    });
+    return responseSuccess(res, {}, result.message);
   } catch (err) {
     console.error("Update password error:", err.message);
-    res.status(400).json({ error: err.message });
+    return responseError(res, err.message, 400);
+  }
+}
+/**
+ * ─────────────────────────────
+ * LOGOUT CONTROLLER
+ * ─────────────────────────────
+ */
+export async function logoutController(req, res) {
+  try {
+    const token = req.token; // From auth middleware
+    const userId = req.user.id;
+
+    if (!token) {
+      return responseError(res, "No token found", 400);
+    }
+
+    const result = await logout(token, userId);
+    return responseSuccess(res, result, result.message, 200);
+
+  } catch (err) {
+    console.error("Logout controller error:", err);
+    return responseError(res, err.message || "Logout failed", 500);
   }
 }

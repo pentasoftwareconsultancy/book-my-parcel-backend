@@ -15,6 +15,10 @@ import {
   checkDuplicateEmail,
   checkDuplicatePhone
 } from "../../utils/validation.util.js";
+import { assignReferralCode, processReferralOnSignup } from "../../services/referral.service.js";
+import { getOrCache } from "../../utils/cache.util.js";
+import { invalidateUserCache } from "../../middlewares/auth.middleware.js";
+import { auditLog } from "../../utils/auditLog.util.js";
 
 export { generateToken };
 
@@ -66,6 +70,15 @@ export async function signup(userData) {
       state:     userData.state     || null,
     }, { transaction: t });
 
+    // Assign a unique referral code to this user
+    await assignReferralCode(user.id, t);
+
+    // Process referral code if provided during signup (non-fatal)
+    if (userData.referral_code) {
+      // Run outside transaction so it doesn't block signup if referral fails
+      setImmediate(() => processReferralOnSignup(user.id, userData.referral_code));
+    }
+
     //  Create TravellerProfile 
     await TravellerProfile.create({
       user_id: user.id,
@@ -95,7 +108,16 @@ export async function signup(userData) {
     ], { transaction: t });
 
     // Generate token
-    const token = generateToken({ userId: user.id });
+    const token = await generateToken({ userId: user.id });
+
+    auditLog({
+      action:       "USER_SIGNUP",
+      actorId:      user.id,
+      actorRole:    "user",
+      resourceType: "user",
+      resourceId:   user.id,
+      meta:         { email: user.email, roles: [ROLES.INDIVIDUAL, ROLES.TRAVELLER] },
+    });
 
     return {
       token,
@@ -144,6 +166,30 @@ export async function login(email, password, loginRole) {
   const match = await bcrypt.compare(password.trim(), user.password);
   if (!match) throw new Error("Invalid password");
 
+  // 4️⃣ Check password expiry
+  try {
+    const expiryDays = await getOrCache(
+      "platform_settings:password_expiry_days",
+      async () => {
+        const result = await sequelize.query(
+          `SELECT value FROM platform_settings WHERE key = 'password_expiry_days'`,
+          { type: sequelize.QueryTypes.SELECT }
+        );
+        return parseInt(result[0]?.value || 90);
+      },
+      300 // 5 min TTL
+    );
+    if (user.password_changed_at && expiryDays > 0) {
+      const daysSinceChange = (Date.now() - new Date(user.password_changed_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceChange > expiryDays) {
+        throw new Error(`PASSWORD_EXPIRED:Your password expired ${Math.floor(daysSinceChange)} days ago. Please reset your password.`);
+      }
+    }
+  } catch (err) {
+    if (err.message.startsWith('PASSWORD_EXPIRED:')) throw err;
+    console.warn("[Auth] Password expiry check failed (non-fatal):", err.message);
+  }
+
   // 3️⃣ Verify password (plain text - TEMPORARY)
 // if (password.trim() !== user.password) {
 //   throw new Error("Invalid password");
@@ -154,7 +200,15 @@ export async function login(email, password, loginRole) {
 
   // 5️⃣ Admin — always admin
   if (dbRoles.includes(ROLES.ADMIN)) {
-    const token = generateToken({ userId: user.id });
+    const token = await generateToken({ userId: user.id, roles: dbRoles });
+    auditLog({
+      action:       "USER_LOGIN",
+      actorId:      user.id,
+      actorRole:    ROLES.ADMIN,
+      resourceType: "user",
+      resourceId:   user.id,
+      meta:         { email: user.email, activeRole: ROLES.ADMIN },
+    });
     return {
       token,
       user: { id: user.id, email: user.email },
@@ -170,7 +224,16 @@ export async function login(email, password, loginRole) {
   }
 
   // 7️⃣ Generate token — only userId
-  const token = generateToken({ userId: user.id });
+  const token = await generateToken({ userId: user.id });
+
+  auditLog({
+    action:       "USER_LOGIN",
+    actorId:      user.id,
+    actorRole:    loginRole,
+    resourceType: "user",
+    resourceId:   user.id,
+    meta:         { email: user.email, activeRole: loginRole },
+  });
 
   return {
     token,
@@ -276,6 +339,9 @@ export async function updateProfile(userId, updateData) {
     });
   }
 
+  // Invalidate the auth middleware cache so the next request re-reads from DB
+  await invalidateUserCache(userId);
+
   return {
     user,
     userProfile: userProfile || null,
@@ -307,8 +373,116 @@ export async function uploadProfilePhoto(userId, file) {
 }
 
 /**
+ * ─────────────────────────────
+ * FORGOT PASSWORD — STEP 1
+ * Send a 6-digit OTP to the user's registered phone number.
+ * ─────────────────────────────
+ */
+export async function requestPasswordResetOtp(email) {
+  const user = await User.findOne({ where: { email } });
+  if (!user) throw new Error("No account found with that email address");
+
+  if (!user.phone_number) throw new Error("No phone number on file for this account");
+
+  // Generate OTP
+  const otpConfig = (await import("../../config/otp.config.js")).default;
+  const otp = Math.floor(
+    Math.pow(10, otpConfig.OTP_LENGTH - 1) +
+    Math.random() * (Math.pow(10, otpConfig.OTP_LENGTH) - Math.pow(10, otpConfig.OTP_LENGTH - 1))
+  ).toString();
+
+  const expiresAt = new Date(Date.now() + otpConfig.EXPIRY_MINUTES * 60 * 1000);
+
+  // Store OTP on the user record (reuse booking otp fields pattern — store in a dedicated column)
+  // We store in a JSON field on the user or use a simple in-memory approach via DB columns.
+  // Using password_reset_otp and password_reset_otp_expires columns (added via migration or alter).
+  await user.update({
+    password_reset_otp: otp,
+    password_reset_otp_expires: expiresAt,
+  });
+
+  // Send SMS
+  const twilioService = (await import("../../services/twilio.service.js")).default;
+  await twilioService.sendSMS(
+    user.phone_number,
+    `Book My Parcel: Your password reset OTP is ${otp}. Valid for ${otpConfig.EXPIRY_MINUTES} minutes. Do not share this with anyone.`
+  );
+
+  console.log(`[ForgotPassword] OTP for ${email}: ${otp}`); // dev log
+
+  return {
+    message: "OTP sent to your registered phone number",
+    phone_hint: user.phone_number.slice(-4).padStart(user.phone_number.length, "*"),
+  };
+}
+
+/**
+ * ─────────────────────────────
+ * FORGOT PASSWORD — STEP 2
+ * Verify OTP and set new password.
+ * ─────────────────────────────
+ */
+export async function resetPasswordWithOtp(email, otp, newPassword) {
+  const user = await User.findOne({ where: { email } });
+
+  if (!user) throw new Error("No account found with that email address");
+
+  if (!user.password_reset_otp) throw new Error("No OTP requested. Please request a new one.");
+
+  if (new Date() > new Date(user.password_reset_otp_expires)) {
+    throw new Error("OTP has expired. Please request a new one.");
+  }
+
+  if (user.password_reset_otp !== otp.toString()) {
+    throw new Error("Invalid OTP. Please check and try again.");
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error("New password must be at least 6 characters");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  await user.update({
+    password: hashedPassword,
+    password_changed_at: new Date(),
+    password_reset_otp: null,
+    password_reset_otp_expires: null,
+  });
+
+  await invalidateUserCache(user.id);
+
+  auditLog({
+    action:       "PASSWORD_RESET",
+    actorId:      user.id,
+    actorRole:    "user",
+    resourceType: "user",
+    resourceId:   user.id,
+    meta:         { email },
+  });
+
+  return { message: "Password reset successfully. You can now log in." };
+}
+
+/**
  * UPDATE PASSWORD
  */
+/**
+ * LOGOUT
+ * Blacklists the current JWT token in Redis so it cannot be reused.
+ */
+export async function logout(token, userId) {
+  try {
+    const { blacklistToken } = await import("../../redis/services/tokenBlacklist.service.js");
+    await blacklistToken(token, userId);
+    return { message: "Logged out successfully" };
+  } catch (error) {
+    console.error("[Auth] Logout error:", error.message);
+    // Non-fatal — still return success even if blacklisting fails
+    return { message: "Logged out successfully" };
+  }
+}
+
 export async function updatePassword(userId, oldPassword, newPassword) {
   const user = await User.findByPk(userId, {
     attributes: { include: ["password"] }
@@ -328,7 +502,19 @@ export async function updatePassword(userId, oldPassword, newPassword) {
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
-  await user.update({ password: hashedPassword });
+  await user.update({ password: hashedPassword, password_changed_at: new Date() });
+
+  // Invalidate auth cache — next request will re-fetch from DB
+  await invalidateUserCache(userId);
+
+  auditLog({
+    action:       "PASSWORD_CHANGED",
+    actorId:      userId,
+    actorRole:    "user",
+    resourceType: "user",
+    resourceId:   userId,
+    meta:         {},
+  });
 
   return { message: "Password updated successfully" };
 }

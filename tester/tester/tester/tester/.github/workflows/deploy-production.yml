@@ -1,0 +1,27 @@
+name: 09 Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  deploy:
+    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Deploy Production to Render
+        run: |
+          echo "🚀 Triggering Render deployment for production..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
+          echo "✅ Production deployment triggered successfully"

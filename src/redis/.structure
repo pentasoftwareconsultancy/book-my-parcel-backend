@@ -1,0 +1,39 @@
+Redis Module Structure
+======================
+
+redis/
+│
+├── 📄 redis.config.js              # Redis connection & configuration
+├── 📄 index.js                     # Central exports (use this for imports!)
+├── 📄 README.md                    # Module documentation
+├── 📄 REDIS-CACHE-IMPLEMENTATION.md # Implementation guide
+│
+├── 📁 cache/                       # Data Caching Services
+│   │
+│   ├── 🆕 userProfileCache.service.js          # User profiles (30 min TTL)
+│   ├── 🆕 travellerRouteCache.service.js       # Active routes (1 hour TTL)
+│   ├── 🆕 parcelRequestCache.service.js        # Parcel requests (30 min TTL)
+│   ├── 🆕 bookingStatusCache.service.js        # Booking statuses (15 min - 1 hour TTL)
+│   ├── 🆕 kycStatusCache.service.js            # KYC statuses (1 hour TTL)
+│   ├── 🆕 notificationCountCache.service.js    # Notification counts (5 min TTL)
+│   ├── deviceTokenCache.service.js             # FCM tokens (24 hours TTL)
+│   ├── platformSettingsCache.service.js        # Platform settings (1 hour TTL)
+│   └── detourCache.service.js                  # Route detours (24 hours TTL)
+│
+├── 📁 services/                    # Redis-based Services
+│   │
+│   ├── otp.service.js              # OTP storage & verification
+│   ├── tokenBlacklist.service.js   # JWT token blacklisting
+│   ├── sessionVersion.service.js   # Session versioning
+│   └── redisRealtime.service.js    # Pub/Sub for real-time events
+│
+└── 📁 utils/                       # Redis Utilities
+    │
+    └── redisLock.util.js           # Distributed locking
+
+Legend:
+🆕 = Newly implemented high-priority cache
+📄 = File
+📁 = Folder
+
+Total: 15 files organized in 3 categories

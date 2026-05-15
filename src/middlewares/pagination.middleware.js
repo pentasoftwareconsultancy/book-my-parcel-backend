@@ -9,7 +9,7 @@ const paginationMiddleware = (req, res, next) => {
       success: false,
       message: "Page must be a positive number"
     });
-  }
+  } 
 
   if (isNaN(limit) || limit <= 0) {
     return res.status(400).json({

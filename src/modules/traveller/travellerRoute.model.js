@@ -164,6 +164,17 @@ const TravellerRoute = sequelize.define(
   { 
     timestamps: true,
     underscored: true,
+    indexes: [
+      { name: "idx_traveller_routes_profile_id", fields: ["traveller_profile_id"] },
+      { name: "idx_traveller_routes_origin_address_id", fields: ["origin_address_id"] },
+      { name: "idx_traveller_routes_dest_address_id", fields: ["dest_address_id"] },
+      { name: "idx_traveller_routes_status", fields: ["status"] },
+      { name: "idx_traveller_routes_departure_date", fields: ["departure_date"] },
+      { name: "idx_traveller_routes_vehicle_type", fields: ["vehicle_type"] },
+      { name: "idx_traveller_routes_capacity", fields: ["available_capacity_kg"] },
+      { name: "idx_traveller_routes_profile_created", fields: ["traveller_profile_id", "created_at"] },
+      { name: "idx_traveller_routes_status_capacity", fields: ["status", "available_capacity_kg"] },
+    ],
   }
 );
 

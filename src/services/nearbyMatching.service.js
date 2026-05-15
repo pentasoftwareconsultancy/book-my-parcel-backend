@@ -2,38 +2,11 @@ import { computeRouteMatrix } from "./googleMaps.service.js";
 import TravellerRoute from "../modules/traveller/travellerRoute.model.js";
 import TravellerProfile from "../modules/traveller/travellerProfile.model.js";
 import User from "../modules/user/user.model.js";
+import { getOrCache } from "../utils/cache.util.js";
 
-// Simple in-memory cache for matrix results (5 minutes TTL)
-const matrixCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-function getCacheKey(origins, destinations) {
-  const originsStr = origins.map(o => `${o.lat.toFixed(4)},${o.lng.toFixed(4)}`).join('|');
-  const destsStr = destinations.map(d => `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`).join('|');
-  return `${originsStr}::${destsStr}`;
-}
-
-function getCachedMatrix(cacheKey) {
-  const cached = matrixCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
-  return null;
-}
-
-function setCachedMatrix(cacheKey, data) {
-  matrixCache.set(cacheKey, {
-    data,
-    timestamp: Date.now()
-  });
-  
-  // Clean up old entries
-  for (const [key, value] of matrixCache.entries()) {
-    if (Date.now() - value.timestamp >= CACHE_TTL) {
-      matrixCache.delete(key);
-    }
-  }
-}
+// Cache TTL for route matrix results — 5 minutes.
+// Coordinates are rounded to 4dp in the key so GPS jitter doesn't bust the cache.
+const MATRIX_CACHE_TTL = 5 * 60; // seconds (getOrCache uses seconds)
 
 export async function getSortedAcceptancesByProximity(acceptances, pickupLocation) {
   try {
@@ -80,14 +53,13 @@ export async function getSortedAcceptancesByProximity(acceptances, pickupLocatio
     const destinations = [pickupLocation];
     
     // Check cache first
-    const cacheKey = getCacheKey(travellerLocations, destinations);
-    let matrixResult = getCachedMatrix(cacheKey);
-    
-    if (!matrixResult) {
-      // Call Google Distance Matrix API
-      matrixResult = await computeRouteMatrix(travellerLocations, destinations);
-      setCachedMatrix(cacheKey, matrixResult);
-    }
+    const cacheKey = `matrix:${
+      travellerLocations.map(o => `${o.lat.toFixed(4)},${o.lng.toFixed(4)}`).join('|')
+    }::${pickupLocation.lat.toFixed(4)},${pickupLocation.lng.toFixed(4)}`;
+
+    let matrixResult = await getOrCache(cacheKey, async () => {
+      return await computeRouteMatrix(travellerLocations, destinations);
+    }, MATRIX_CACHE_TTL);
     
     // Process results and sort
     const sortedAcceptances = [];

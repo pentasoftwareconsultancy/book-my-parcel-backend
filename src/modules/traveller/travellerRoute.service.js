@@ -12,12 +12,61 @@ import {
 } from "../../services/googleMaps.service.js";
 import { extractAndStorePlaces } from "../../services/placeExtraction.service.js";
 import polyline from "@mapbox/polyline";
+import redis from "../../redis/redis.config.js";
+import { cacheRoute, invalidateRouteCache, getRoute as getCachedRoute, getActiveRoutes as getCachedActiveRoutes } from "../../redis/cache/travellerRouteCache.service.js";
+
+const ADDRESS_ENRICH_CACHE_TTL_SECONDS = 24 * 60 * 60;
+const INTERMEDIATE_DATA_CACHE_TTL_SECONDS = 6 * 60 * 60;
+
+function buildAddressEnrichCacheKey(addressData) {
+  const address = (addressData.address || "").trim().toLowerCase();
+  const city = (addressData.city || "").trim().toLowerCase();
+  const pincode = (addressData.pincode || "").toString().trim();
+  const placeId = (addressData.place_id || "").trim();
+  return `cache:google:address-enrich:${address}|${city}|${pincode}|${placeId}`;
+}
+
+function buildIntermediateDataCacheKey(sampledPoints) {
+  const pointsKey = sampledPoints
+    .map(([lat, lng]) => `${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`)
+    .join("|");
+  return `cache:google:intermediate-data:${pointsKey}`;
+}
+
+async function getCachedJson(cacheKey) {
+  if (!redis) return null;
+  try {
+    const cached = await redis.get(cacheKey);
+    return cached ? JSON.parse(cached) : null;
+  } catch (error) {
+    console.warn("[RouteGoogleCache] read failed:", error.message);
+    return null;
+  }
+}
+
+async function setCachedJson(cacheKey, payload, ttlSeconds) {
+  if (!redis) return;
+  try {
+    await redis.set(cacheKey, JSON.stringify(payload), "EX", ttlSeconds);
+  } catch (error) {
+    console.warn("[RouteGoogleCache] write failed:", error.message);
+  }
+}
 
 // ─── Helper: Enrich address data via Google APIs ──────────────────────────────
 // Reuses the same logic from parcel.service.js
 async function enrichAddressWithGoogleData(addressData) {
   const { address, city, pincode, place_id } = addressData;
   const enriched = { ...addressData };
+  const cacheKey = buildAddressEnrichCacheKey(addressData);
+
+  const cached = await getCachedJson(cacheKey);
+  if (cached) {
+    if (cached.last_geocoded_at) {
+      cached.last_geocoded_at = new Date(cached.last_geocoded_at);
+    }
+    return { ...enriched, ...cached };
+  }
 
   if (!process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY === "your_google_api_key_here") {
     return enriched;
@@ -43,25 +92,32 @@ async function enrichAddressWithGoogleData(addressData) {
       enriched.plus_code = geocodeResult.plus_code.global_code;
     }
 
-    // Get place details for administrative hierarchy
-    if (resolvedPlaceId) {
+    // PARALLELIZED - Get place details AND address descriptors simultaneously
+    // This reduces latency from sum(API calls) to max(API call)
+    const [placeDetailsResult, descriptorResult] = await Promise.allSettled([
+      // API Call 1: Get place details for administrative hierarchy
+      resolvedPlaceId ? getPlaceDetails(resolvedPlaceId) : Promise.resolve(null),
+      // API Call 2: Get address descriptors (landmarks)
+      (location?.lat && location?.lng) ? getAddressDescriptors(location.lat, location.lng) : Promise.resolve(null)
+    ]);
+
+    // Process place details result
+    if (placeDetailsResult.status === 'fulfilled' && placeDetailsResult.value) {
       try {
-        const placeDetails = await getPlaceDetails(resolvedPlaceId);
-        const hierarchy = extractHierarchy(placeDetails);
+        const hierarchy = extractHierarchy(placeDetailsResult.value);
         if (hierarchy.district) enriched.district = hierarchy.district;
         if (hierarchy.taluka) enriched.taluka = hierarchy.taluka;
         if (hierarchy.locality) enriched.locality = hierarchy.locality;
         if (hierarchy.subLocality) enriched.sub_localities = [hierarchy.subLocality];
       } catch (e) {
-        console.warn("[GoogleMaps] Place details skipped:", e.message);
+        console.warn("[GoogleMaps] Place details processing error:", e.message);
       }
     }
 
-    // Get address descriptors (landmarks)
-    if (location?.lat && location?.lng) {
+    // Process address descriptors result
+    if (descriptorResult.status === 'fulfilled' && descriptorResult.value) {
       try {
-        const descriptorResult = await getAddressDescriptors(location.lat, location.lng);
-        const addressDescriptor = descriptorResult?.address_descriptor;
+        const addressDescriptor = descriptorResult.value?.address_descriptor;
         if (addressDescriptor?.landmarks && Array.isArray(addressDescriptor.landmarks)) {
           enriched.landmarks = addressDescriptor.landmarks.slice(0, 5).map((lm) => ({
             name: lm.name,
@@ -69,13 +125,14 @@ async function enrichAddressWithGoogleData(addressData) {
           }));
         }
       } catch (e) {
-        console.warn("[GoogleMaps] Address descriptors skipped:", e.message);
+        console.warn("[GoogleMaps] Address descriptors processing error:", e.message);
       }
     }
   } catch (error) {
     console.error("[GoogleMaps] Address enrichment failed:", error.message);
   }
 
+  await setCachedJson(cacheKey, enriched, ADDRESS_ENRICH_CACHE_TTL_SECONDS);
   return enriched;
 }
 
@@ -181,6 +238,10 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 
 // ─── Helper: Extract intermediate data from sampled points ────────────────────
 async function extractIntermediateData(sampledPoints) {
+  const cacheKey = buildIntermediateDataCacheKey(sampledPoints);
+  const cached = await getCachedJson(cacheKey);
+  if (cached) return cached;
+
   const localities = new Set();
   const pincodes = new Set();
   const talukas = new Set();
@@ -223,13 +284,15 @@ async function extractIntermediateData(sampledPoints) {
     }
   }
 
-  return {
+  const result = {
     localities: Array.from(localities),
     pincodes: Array.from(pincodes),
     talukas: Array.from(talukas),
     cities: Array.from(cities),
     landmarks: landmarks.slice(0, 10), // Limit to 10 unique landmarks
   };
+  await setCachedJson(cacheKey, result, INTERMEDIATE_DATA_CACHE_TTL_SECONDS);
+  return result;
 }
 
 // ─── Helper: Extract Transit Stops from Route Steps ───────────────────────────
@@ -513,6 +576,21 @@ export async function createTravellerRoute(data, userId) {
     await extractAndStorePlaces(route.id, intermediateData, t);
 
     await t.commit();
+    
+    // Cache the newly created route
+    await cacheRoute(route.id, {
+      id: route.id,
+      traveller_id: travellerProfile.id,
+      status: route.status,
+      origin_address_id: route.origin_address_id,
+      dest_address_id: route.dest_address_id,
+      polyline: route.polyline,
+      distance_km: route.distance_km,
+      duration_minutes: route.duration_minutes,
+      vehicle_type: route.vehicle_type,
+      transport_mode: route.transport_mode
+    });
+    
     return { route, originAddress, destAddress };
   } catch (error) {
     await t.rollback();
@@ -638,6 +716,9 @@ export async function updateTravellerRoute(routeId, userId, data) {
 
     await t.commit();
 
+    // Invalidate route cache
+    await invalidateRouteCache(routeId, travellerProfile.id);
+
     return route.reload({
       include: [
         { model: Address, as: "originAddress" },
@@ -661,5 +742,9 @@ export async function deleteTravellerRoute(routeId, userId) {
   if (!route) throw new Error("Route not found or unauthorized");
 
   await route.destroy();
+  
+  // Invalidate route cache
+  await invalidateRouteCache(routeId, travellerProfile.id);
+
   return { message: "Route deleted successfully" };
 }

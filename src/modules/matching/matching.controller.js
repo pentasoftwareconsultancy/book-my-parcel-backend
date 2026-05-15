@@ -6,12 +6,16 @@ import ParcelAcceptance from "./parcelAcceptance.model.js";
 import Booking from "../booking/booking.model.js";
 import Address from "../parcel/address.model.js";
 import User from "../user/user.model.js";
+
+import UserProfile from "../user/userProfile.model.js";
 import TravellerProfile from "../traveller/travellerProfile.model.js";
 import TravellerRoute from "../traveller/travellerRoute.model.js";
 import { responseSuccess, responseError } from "../../utils/response.util.js";
 import { sendToTraveller, sendToUser } from "../../services/notification.service.js";
 import { matchParcelWithTravellers, runPeriodicMatching } from "../../services/matchingEngine.service.js";
 import { getSortedAcceptancesByProximity } from "../../services/nearbyMatching.service.js";
+import { PARCEL_TRANSITIONS, assertValidTransition } from "../../utils/constants.js";
+import { to12h } from "../../utils/time.util.js";
 
 // ─── POST /api/parcel/:id/find-travellers ──────────────────────────────────
 export async function findTravellers(req, res) {
@@ -36,6 +40,7 @@ export async function findTravellers(req, res) {
     }
 
     // Update parcel status to MATCHING
+    assertValidTransition(parcel.status, "MATCHING", PARCEL_TRANSITIONS, "Parcel");
     await parcel.update({ status: "MATCHING" });
 
     // Emit WebSocket event to user
@@ -136,6 +141,19 @@ export async function acceptRequest(req, res) {
       },
       { transaction: t }
     );
+
+    // Decrease available_capacity_kg on the traveller's route
+    if (request.route_id && parcel.weight) {
+      await TravellerRoute.decrement(
+        "available_capacity_kg",
+        {
+          by: Math.ceil(parcel.weight),
+          where: { id: request.route_id },
+          transaction: t,
+        }
+      );
+      console.log(`[Matching] Reduced route ${request.route_id} capacity by ${Math.ceil(parcel.weight)} kg`);
+    }
 
     await t.commit();
 
@@ -386,14 +404,54 @@ export async function getAcceptances(req, res) {
       ];
     }
 
+    const now = new Date();
+    const todayDate = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const currentTime = now.toTimeString().slice(0, 8); // "HH:MM:SS"
+
+    // A route is still valid if:
+    //   - it is recurring (next occurrence is always in the future), OR
+    //   - its departure_date is in the future, OR
+    //   - its departure_date is today AND departure_time hasn't passed yet
+    const validRouteWhere = {
+      [Op.or]: [
+        { is_recurring: true },
+        { departure_date: { [Op.gt]: todayDate } },
+        {
+          departure_date: todayDate,
+          departure_time: { [Op.gt]: currentTime },
+        },
+      ],
+    };
+
     const acceptances = await ParcelAcceptance.findAll({
       where: { parcel_id: parcelId },
       include: [
         {
           model: ParcelRequest,
           as: "request",
-          attributes: ["detour_km", "detour_percentage", "match_score", "status"],
-          where: { status: "INTERESTED" }, // Only show interested travellers
+          attributes: ["route_id", "detour_km", "detour_percentage", "match_score", "status"],
+          where: { status: { [Op.in]: ["INTERESTED", "ACCEPTED"] } },
+          include: [
+            {
+              model: TravellerRoute,
+              as: "route",
+              required: true,          // exclude acceptances whose route has been deleted
+              where: validRouteWhere,  // exclude expired routes
+              attributes: ["id", "departure_date", "departure_time", "arrival_date", "arrival_time", "vehicle_type", "vehicle_number", "total_distance_km", "total_duration_minutes", "status", "is_recurring"],
+              include: [
+                {
+                  model: Address,
+                  as: "originAddress",
+                  attributes: ["id", "address", "city", "state", "pincode", "locality", "latitude", "longitude"]
+                },
+                {
+                  model: Address,
+                  as: "destAddress",
+                  attributes: ["id", "address", "city", "state", "pincode", "locality", "latitude", "longitude"]
+                }
+              ]
+            }
+          ]
         },
         {
           model: User,
@@ -403,72 +461,89 @@ export async function getAcceptances(req, res) {
             {
               model: TravellerProfile,
               as: "travellerProfile",
-              attributes: ["id", "vehicle_type", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"],
-              include: [
-                {
-                  model: TravellerRoute,
-                  as: "routes",
-                  required: false,
-                  attributes: ["id", "departure_time", "arrival_time", "vehicle_number", "total_distance_km", "total_duration_minutes", "status"],
-                  include: [
-                    {
-                      model: Address,
-                      as: "originAddress",
-                      attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
-                    },
-                    {
-                      model: Address,
-                      as: "destAddress",
-                      attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
-                    }
-                  ]
-                }
-              ]
+              attributes: ["id", "vehicle_type", "vehicle_number", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"]
             },
+            {
+              model: UserProfile,
+              as: "profile",
+              attributes: ["name"]
+            }
           ],
         },
       ],
       order: orderClause,
     });
 
-    let formattedAcceptances = acceptances.map((acc) => ({
-      acceptance_id: acc.id,
-      type: "accepted",
-      traveller: {
-        id: acc.traveller.id,
-        email: acc.traveller.email,
-        phone: acc.traveller.phone_number,
-        rating: acc.traveller.travellerProfile?.rating || 4.8,
-        total_deliveries: acc.traveller.travellerProfile?.total_deliveries || 0,
-        profile_photo: acc.traveller.travellerProfile?.profile_photo || null,
-        vehicle_type: acc.traveller.travellerProfile?.vehicle_type || null,
-        capacity_kg: acc.traveller.travellerProfile?.capacity_kg || null,
-        travellerProfile: acc.traveller.travellerProfile
-      },
-      route: acc.traveller.travellerProfile?.routes?.find(r => r.status === "ACTIVE") || null,
-      detour_km: acc.request.detour_km,
-      detour_percentage: acc.request.detour_percentage,
-      match_score: acc.request.match_score,
-      acceptance_price: acc.acceptance_price,
-      accepted_at: acc.accepted_at,
-    }));
+    let formattedAcceptances = acceptances.map((acc) => {
+      const route = acc.request?.route;
+      return {
+        acceptance_id: acc.id,
+        parcel_request_id: acc.parcel_request_id,
+        type: "accepted",
+        traveller: {
+          id: acc.traveller.id,
+          email: acc.traveller.email,
+          phone: acc.traveller.phone_number,
+          profile: acc.traveller.profile,
+          travellerProfile: acc.traveller.travellerProfile
+        },
+        route_id: acc.request.route_id,
+        route: route ? {
+          id: route.id,
+          vehicle_type: route.vehicle_type,
+          vehicle_number: route.vehicle_number,
+          departure_time: to12h(route.departure_time),
+          arrival_time: to12h(route.arrival_time),
+          departure_date: route.departure_date,
+          arrival_date: route.arrival_date,
+          total_distance_km: route.total_distance_km,
+          total_duration_minutes: route.total_duration_minutes,
+          status: route.status,
+          originAddress: route.originAddress,
+          destAddress: route.destAddress
+        } : null,
+        detour_km: acc.request.detour_km,
+        detour_percentage: acc.request.detour_percentage,
+        match_score: acc.request.match_score,
+        acceptance_price: acc.acceptance_price,
+        accepted_at: acc.accepted_at,
+        drive_time_minutes: route?.total_duration_minutes,
+        drive_distance_km: route?.total_distance_km
+      };
+    });
 
-    console.log('[Matching] Formatted acceptances:', JSON.stringify(formattedAcceptances.map(a => ({
-      traveller_id: a.traveller.id,
-      traveller_email: a.traveller.email,
-      has_route: !!a.route,
-      route_status: a.route?.status,
-      route_origin_city: a.route?.originAddress?.city,
-      route_dest_city: a.route?.destAddress?.city,
-      route_object_keys: a.route ? Object.keys(a.route) : null
-    })), null, 2));
+    // Deduplicate: keep only the best route per traveller.
+    // Priority: (1) route destination matches parcel delivery city, (2) lowest detour_km
+    const deliveryCity = parcel.deliveryAddress?.city?.toLowerCase() || "";
+    console.log(`[Dedup] Parcel delivery city: "${deliveryCity}", total acceptances: ${formattedAcceptances.length}`);
+    const bestAcceptanceByTraveller = new Map();
+    for (const acc of formattedAcceptances) {
+      const tid = acc.traveller.id;
+      const existing = bestAcceptanceByTraveller.get(tid);
+      const accDestCity = (acc.route?.destAddress?.city || "").toLowerCase();
+      const accMatchesCity = deliveryCity && accDestCity.includes(deliveryCity);
+      const accDetour = parseFloat(acc.detour_km) || Infinity;
+      console.log(`[Dedup] Traveller ${acc.traveller.email} | route dest: "${accDestCity}" | matchesCity: ${accMatchesCity} | detour: ${accDetour}`);
 
-    // Also log the full route object for first acceptance if it exists
-    if (formattedAcceptances[0]?.route) {
-      console.log('[Matching] Full route object for first acceptance:', JSON.stringify(formattedAcceptances[0].route, null, 2));
+      if (!existing) {
+        bestAcceptanceByTraveller.set(tid, acc);
+      } else {
+        const exDestCity = (existing.route?.destAddress?.city || "").toLowerCase();
+        const exMatchesCity = deliveryCity && exDestCity.includes(deliveryCity);
+        const exDetour = parseFloat(existing.detour_km) || Infinity;
+        if (accMatchesCity && !exMatchesCity) {
+          console.log(`[Dedup] → Replacing with city-match route (${accDestCity})`);
+          bestAcceptanceByTraveller.set(tid, acc);
+        } else if (accMatchesCity === exMatchesCity && accDetour < exDetour) {
+          console.log(`[Dedup] → Replacing with lower detour route`);
+          bestAcceptanceByTraveller.set(tid, acc);
+        } else {
+          console.log(`[Dedup] → Keeping existing route (${exDestCity})`);
+        }
+      }
     }
-
-    // Get pending requests if requested
+    formattedAcceptances = Array.from(bestAcceptanceByTraveller.values());
+    console.log(`[Dedup] After dedup: ${formattedAcceptances.length} acceptances`);
     let pendingRequests = [];
     if (includePending) {
       const pendingParcelRequests = await ParcelRequest.findAll({
@@ -485,55 +560,87 @@ export async function getAcceptances(req, res) {
               {
                 model: TravellerProfile,
                 as: "travellerProfile",
-                attributes: ["id", "vehicle_type", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"],
-                include: [
-                  {
-                    model: TravellerRoute,
-                    as: "routes",
-                    required: false,
-                    attributes: ["id", "departure_time", "arrival_time", "vehicle_number", "total_distance_km", "total_duration_minutes", "status"],
-                    include: [
-                      {
-                        model: Address,
-                        as: "originAddress",
-                        attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
-                      },
-                      {
-                        model: Address,
-                        as: "destAddress",
-                        attributes: ["id", "address", "city", "locality", "latitude", "longitude"]
-                      }
-                    ]
-                  }
-                ]
+                attributes: ["id", "vehicle_type", "vehicle_number", "capacity_kg", "status", "rating", "total_deliveries", "profile_photo", "last_known_location"]
               },
+              {
+                model: UserProfile,
+                as: "profile",
+                attributes: ["name"]
+              }
             ],
           },
+          {
+            model: TravellerRoute,
+            as: "route",
+            required: true,          // exclude requests whose route has expired
+            where: validRouteWhere,  // same datetime filter as acceptances
+            attributes: ["id", "departure_date", "departure_time", "arrival_date", "arrival_time", "vehicle_type", "vehicle_number", "total_distance_km", "total_duration_minutes", "status", "is_recurring"],
+            include: [
+              {
+                model: Address,
+                as: "originAddress",
+                attributes: ["id", "address", "city", "state", "pincode", "locality", "latitude", "longitude"]
+              },
+              {
+                model: Address,
+                as: "destAddress",
+                attributes: ["id", "address", "city", "state", "pincode", "locality", "latitude", "longitude"]
+              }
+            ]
+          }
         ],
         order: [["sent_at", "DESC"]],
       });
 
-      pendingRequests = pendingParcelRequests.map((req) => ({
-        request_id: req.id,
-        type: "pending",
-        traveller: {
-          id: req.traveller.id,
-          email: req.traveller.email,
-          phone: req.traveller.phone_number,
-          rating: req.traveller.travellerProfile?.rating || 4.8,
-          total_deliveries: req.traveller.travellerProfile?.total_deliveries || 0,
-          profile_photo: req.traveller.travellerProfile?.profile_photo || null,
-          vehicle_type: req.traveller.travellerProfile?.vehicle_type || null,
-          capacity_kg: req.traveller.travellerProfile?.capacity_kg || null,
-          travellerProfile: req.traveller.travellerProfile
-        },
-        route: req.traveller.travellerProfile?.routes?.find(r => r.status === "ACTIVE") || null,
-        detour_km: req.detour_km,
-        detour_percentage: req.detour_percentage,
-        match_score: req.match_score,
-        sent_at: req.sent_at,
-        expires_at: req.expires_at,
-      }));
+      pendingRequests = pendingParcelRequests.map((req) => {
+        const route = req.route;
+        return {
+          request_id: req.id,
+          type: "pending",
+          traveller: {
+            id: req.traveller.id,
+            email: req.traveller.email,
+            phone: req.traveller.phone_number,
+            profile: req.traveller.profile,
+            travellerProfile: req.traveller.travellerProfile
+          },
+          route_id: req.route_id,
+          route: route ? {
+            id: route.id,
+            vehicle_type: route.vehicle_type,
+            vehicle_number: route.vehicle_number,
+            departure_time: to12h(route.departure_time),
+            arrival_time: to12h(route.arrival_time),
+            departure_date: route.departure_date,
+            arrival_date: route.arrival_date,
+            total_distance_km: route.total_distance_km,
+            total_duration_minutes: route.total_duration_minutes,
+            status: route.status,
+            originAddress: route.originAddress,
+            destAddress: route.destAddress
+          } : null,
+          detour_km: req.detour_km,
+          detour_percentage: req.detour_percentage,
+          match_score: req.match_score,
+          sent_at: req.sent_at,
+          expires_at: req.expires_at,
+          drive_time_minutes: route?.total_duration_minutes,
+          drive_distance_km: route?.total_distance_km
+        };
+      });
+
+      // Deduplicate pending: keep best route per traveller
+      const bestPendingByTraveller = new Map();
+      for (const req of pendingRequests) {
+        const tid = req.traveller.id;
+        const existing = bestPendingByTraveller.get(tid);
+        const reqDetour = parseFloat(req.detour_km) || Infinity;
+        const exDetour  = existing ? (parseFloat(existing.detour_km) || Infinity) : Infinity;
+        if (!existing || reqDetour < exDetour) {
+          bestPendingByTraveller.set(tid, req);
+        }
+      }
+      pendingRequests = Array.from(bestPendingByTraveller.values());
     }
 
     // Handle nearby sorting for short-distance parcels
@@ -586,12 +693,6 @@ export async function getAcceptances(req, res) {
 
 // ─── POST /api/parcel/:id/select-traveller ─────────────────────────────────
 export async function selectTraveller(req, res) {
-  console.log('🎯 selectTraveller called with:', {
-    parcelId: req.params.id,
-    body: req.body,
-    userId: req.user.id
-  });
-
   const t = await sequelize.transaction();
 
   try {
@@ -599,12 +700,12 @@ export async function selectTraveller(req, res) {
     const { traveller_id, acceptance_price } = req.body;
 
     // Verify parcel exists and belongs to user
-    const parcel = await Parcel.findByPk(parcelId, { 
+    const parcel = await Parcel.findByPk(parcelId, {
       include: [
         { model: Address, as: "pickupAddress" },
         { model: Address, as: "deliveryAddress" }
       ],
-      transaction: t 
+      transaction: t
     });
     if (!parcel) {
       await t.rollback();
@@ -629,10 +730,15 @@ export async function selectTraveller(req, res) {
           parcel_id: parcelId,
           traveller_id,
         },
-        include: [{ 
-          model: ParcelRequest, 
+        include: [{
+          model: ParcelRequest,
           as: "request",
-          where: { status: "INTERESTED" } // Only allow selection of interested travellers
+          where: { status: "INTERESTED" },
+          include: [{
+            model: TravellerRoute,
+            as: "route",
+            attributes: ["id", "departure_date", "departure_time", "arrival_date", "arrival_time", "is_recurring"],
+          }],
         }],
       },
       { transaction: t }
@@ -642,6 +748,31 @@ export async function selectTraveller(req, res) {
       await t.rollback();
       return responseError(res, "Traveller has not expressed interest in this parcel", 400);
     }
+
+    // ── Route expiry guard ────────────────────────────────────────────────────
+    // Prevent selecting a traveller whose route departure has already passed.
+    const route = acceptance.request?.route;
+    if (route && !route.is_recurring) {
+      const now = new Date();
+      const todayDate = now.toISOString().slice(0, 10);
+      const currentTime = now.toTimeString().slice(0, 8);
+      const depDate = route.departure_date;
+      const depTime = route.departure_time;
+
+      const routeExpired =
+        depDate < todayDate ||
+        (depDate === todayDate && depTime && depTime <= currentTime);
+
+      if (routeExpired) {
+        await t.rollback();
+        return responseError(
+          res,
+          "This traveller's route has already departed. Please select another traveller.",
+          400
+        );
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Get traveller profile
     const travellerProfile = await TravellerProfile.findOne(
@@ -715,14 +846,7 @@ export async function selectTraveller(req, res) {
     // Emit WebSocket events AFTER commit
     if (req.app.get("io")) {
       const io = req.app.get("io");
-      
-      console.log('🔌 Emitting WebSocket events for traveller selection (not booking yet):', {
-        parcelId,
-        travellerId: traveller_id,
-        parcelRoom: `parcel_${parcelId}`,
-        travellerRoom: `traveller_requests_${traveller_id}`
-      });
-      
+
       // Emit to parcel room (for parcel owner)
       io.to(`parcel_${parcelId}`).emit("parcel_selected", {
         parcel_id: parcelId,
@@ -730,18 +854,17 @@ export async function selectTraveller(req, res) {
         parcel_ref: parcel.parcel_ref,
         traveller_id,
         final_price: finalPrice,
-        status: "PARTNER_SELECTED", // Indicate selection but not booking yet
+        status: "PARTNER_SELECTED",
       });
-      console.log(`🔌 Emitted parcel_selected to room parcel_${parcelId}`);
 
-      // Emit specific notification to selected traveller (selection notification, not booking)
+      // Emit specific notification to selected traveller
       const travellerSelectedData = {
         parcel_id: parcelId,
         parcel_uuid: parcelId,
         parcel_ref: parcel.parcel_ref,
         request_id: acceptance.request.id,
         final_price: finalPrice,
-        status: "SELECTED", // Status for the traveller
+        status: "SELECTED",
         message: "You have been selected! Waiting for payment confirmation...",
         parcel_details: {
           pickup_address: parcel.pickupAddress,
@@ -754,22 +877,20 @@ export async function selectTraveller(req, res) {
           pickup_date: parcel.pickup_date,
         }
       };
-      
+
       io.to(`traveller_requests_${traveller_id}`).emit("traveller_selected", travellerSelectedData);
-      console.log(`🔌 Emitted traveller_selected to room traveller_requests_${traveller_id}`, travellerSelectedData);
 
       // Emit rejection notifications to all other travellers
       for (const rejectedId of rejectedTravellerIds) {
         const rejectedRequest = otherAcceptances.find(acc => acc.traveller_id === rejectedId)?.request;
         io.to(`traveller_requests_${rejectedId}`).emit("request_not_selected", {
           parcel_id: parcelId,
-          parcel_uuid: parcelId, // Add explicit UUID for matching
-          parcel_ref: parcel.parcel_ref, // Add parcel_ref for better matching
+          parcel_uuid: parcelId,
+          parcel_ref: parcel.parcel_ref,
           request_id: rejectedRequest?.id,
           message: "This parcel has been assigned to another traveller",
           status: "NOT_SELECTED"
         });
-        console.log(`[WebSocket] Emitted request_not_selected to traveller_requests_${rejectedId}`);
       }
     }
 
@@ -804,6 +925,21 @@ export async function getTravellerRequests(req, res) {
     const travellerId = req.user.id;
     const { status = "SENT" } = req.query;
 
+    const now = new Date();
+    const todayDate = now.toISOString().slice(0, 10);
+    const currentTime = now.toTimeString().slice(0, 8);
+
+    const validRouteWhere = {
+      [Op.or]: [
+        { is_recurring: true },
+        { departure_date: { [Op.gt]: todayDate } },
+        {
+          departure_date: todayDate,
+          departure_time: { [Op.gt]: currentTime },
+        },
+      ],
+    };
+
     const requests = await ParcelRequest.findAll({
       where: {
         traveller_id: travellerId,
@@ -822,58 +958,53 @@ export async function getTravellerRequests(req, res) {
         {
           model: TravellerRoute,
           as: "route",
-          attributes: ["id", "total_distance_km", "total_duration_minutes"],
+          required: true,         // exclude requests whose route no longer exists
+          where: validRouteWhere, // exclude requests whose route has expired
+          attributes: ["id", "departure_date", "departure_time", "arrival_date", "arrival_time", "total_distance_km", "total_duration_minutes", "is_recurring"],
         },
       ],
       order: [["sent_at", "DESC"]],
     });
 
-    const formattedRequests = requests.map((req) => {
-      // Debug logging
-      console.log(`[getTravellerRequests] Request ${req.id}:`, {
-        parcel_id: req.parcel.id,
-        pickup_city: req.parcel.pickupAddress?.city,
-        delivery_city: req.parcel.deliveryAddress?.city,
-        route_id: req.route?.id
-      });
-
-      return {
-        request_id: req.id,
-        parcel: {
-          id: req.parcel.id,
-          parcel_ref: req.parcel.parcel_ref,
-          weight: req.parcel.weight,
-          type: req.parcel.parcel_type,
-          price_quote: req.parcel.price_quote,
-          pickup: {
-            city: req.parcel.pickupAddress.city,
-            locality: req.parcel.pickupAddress.locality,
-            address: req.parcel.pickupAddress.formatted_address,
-          },
-          delivery: {
-            city: req.parcel.deliveryAddress.city,
-            locality: req.parcel.deliveryAddress.locality,
-            address: req.parcel.deliveryAddress.formatted_address,
-          },
+    const formattedRequests = requests.map((req) => ({
+      request_id: req.id,
+      parcel: {
+        id: req.parcel.id,
+        parcel_ref: req.parcel.parcel_ref,
+        weight: req.parcel.weight,
+        type: req.parcel.parcel_type,
+        price_quote: req.parcel.price_quote,
+        pickup: {
+          city: req.parcel.pickupAddress.city,
+          locality: req.parcel.pickupAddress.locality,
+          address: req.parcel.pickupAddress.formatted_address,
         },
-        route: {
-          id: req.route.id,
-          distance_km: req.route.total_distance_km,
-          duration_minutes: req.route.total_duration_minutes,
+        delivery: {
+          city: req.parcel.deliveryAddress.city,
+          locality: req.parcel.deliveryAddress.locality,
+          address: req.parcel.deliveryAddress.formatted_address,
         },
-        detour_km: req.detour_km,
-        detour_percentage: req.detour_percentage,
-        match_score: req.match_score,
-        status: req.status,
-        sent_at: req.sent_at,
-        expires_at: req.expires_at,
-      };
-    });
+      },
+      route: {
+        id: req.route.id,
+        distance_km: req.route.total_distance_km,
+        duration_minutes: req.route.total_duration_minutes,
+        departure_date: req.route.departure_date,
+        departure_time: to12h(req.route.departure_time),
+        arrival_date: req.route.arrival_date,
+        arrival_time: to12h(req.route.arrival_time),
+      },
+      detour_km: req.detour_km,
+      detour_percentage: req.detour_percentage,
+      match_score: req.match_score,
+      status: req.status,
+      sent_at: req.sent_at,
+      expires_at: req.expires_at,
+    }));
 
     return responseSuccess(res, formattedRequests, "Requests retrieved successfully");
   } catch (error) {
     console.error("[Matching] Error getting traveller requests:", error.message);
-    console.error(error.stack);
     return responseError(res, error.message || "Failed to get requests", 500);
   }
 }

@@ -1,0 +1,31 @@
+name: 05 Auto Merge to Stage
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - stage
+
+jobs:
+  merge:
+    if: github.repository == 'pentasoftwareconsultancy/book-my-parcel-backend' && github.event.pull_request.head.ref == 'testing'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auto-merge PR to Stage
+        run: |
+          echo "⏳ Waiting 10 seconds before auto-merge..."
+          sleep 10
+          
+          curl -X PUT \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/pentasoftwareconsultancy/book-my-parcel-backend/pulls/${{ github.event.pull_request.number }}/merge \
+            -d '{
+              "commit_title": "Merge testing → stage: Auto-merged",
+              "commit_message": "Auto-merged from testing branch",
+              "merge_method": "squash"
+            }'
